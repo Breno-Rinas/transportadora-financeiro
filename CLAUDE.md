@@ -163,6 +163,30 @@ Por quê: o roteiro de aceite registra descarga e comprovantes **antes** da baix
 
 **Próximos passos ("o que falta").** `getPendingSteps(ctx)` no domínio devolve `{ code, message }[]`. Exemplos: "Aguardando emissão do CT-e", "Aguardando foto do carregamento", "Aguardando baixa do adiantamento", "Aguardando descarga", "Aguardando canhoto original", "Saldo liberado — programar pagamento", "Aguardando pagamento do saldo". A API devolve a lista pronta; o front só exibe.
 
+### Domínio implementado (API pública — use estas funções, não reimplemente)
+
+- `shared/money.ts`: `splitDriverFreight`, `assertPositiveCents`, `isAdvancePercent`.
+- `shared/local-date.ts`: `LocalDate`, `DateRange`, `toBusinessDate`, `addDays`, `compareLocalDate`, `isWithinRange`, `getMonthRange`, `assertValidLocalDate`.
+- `shared/documents.ts`: `parseCnpj`, `parseDriverDocument` e `parsePlate` removem a máscara, validam e devolvem o valor a salvar (lançam `INVALID_DOCUMENT`).
+- `trip/facts.ts`: `TripFacts`, `buildTripFacts(events, titles)`, `isLoaded`, `getLoadedAt`.
+- `trip/lifecycle.ts`: `advanceLifecycle`, `INITIAL_STATUS_CHANGE`. Gatilhos gravados em `TripStatusChange.trigger`: `TRIP_CREATED`, `CTE_AND_LOADING_PHOTO_REGISTERED`, `ADVANCE_SETTLED`, `UNLOADING_REGISTERED`, `PROOFS_REGISTERED`, `BALANCE_SETTLED`.
+- `trip/event-rules.ts`: `decideEventRegistration` (`'NEW' | 'REPLAY'` ou 409) e `assertEventCanBeRegistered`.
+- `trip/title-generation.ts`: `shouldGenerateTitles`, `buildLoadingTitles`, `getBalanceDueDate`.
+- `trip/margin.ts`: `calculateTripMargin`.
+- `trip/pending-steps.ts`: `getPendingSteps`.
+- `title/locks.ts`: `getTitleLocks`.
+- `title/operations.ts`: `assertCanSchedule`, `assertCanSettle`.
+- `title/agenda.ts`: `isOpenTitle`, `getEffectiveDate`, `classifyDueDate` (`OVERDUE | TODAY | WITHIN_WEEK | LATER | NO_DATE`).
+- `dashboard/indicators.ts`: `buildDashboard`, `resolveDashboardPeriod`.
+
+### Decisões do domínio
+
+- **Códigos de erro:** existem também `TRIP_CANCELLED` e `TITLE_CANCELLED` (409). Invariantes de entrada repetidas no domínio (valor ≤ 0, percentual diferente de 50/70, prazo negativo) usam `VALIDATION_ERROR` (400). A union `DomainErrorCode` fica em `errors.ts`, e o error handler mapeia com `Record<DomainErrorCode, number>`.
+- **CNPJ alfanumérico:** aceito conforme a IN RFB 2.229/2024, além do só numérico. O `maskCnpj` do front precisa aceitar letras.
+- **Ordem das checagens na baixa:** natureza → status → travas → valor → data. Se a única trava do saldo for o adiantamento não pago, o erro é `ADVANCE_NOT_PAID`; se houver também trava de descarga ou canhoto, o erro é `BALANCE_LOCKED`, listando todos os motivos.
+- **Percentual da margem:** é `null` quando o frete do cliente é zero. No painel, o percentual é ponderado (margem total ÷ frete total), e o período considera a data de negócio da emissão do CT-e.
+- **Pendências:** "Saldo liberado" depende do `canSchedule` das travas e pode aparecer junto com "Aguardando baixa do adiantamento".
+
 ## Painel — `GET /api/dashboard?from&to`
 
 Tudo em uma chamada. "Hoje" no fuso de negócio; o período padrão é o mês corrente. Itens abertos são os títulos `OPEN` ou `SCHEDULED`.
