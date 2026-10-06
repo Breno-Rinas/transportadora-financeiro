@@ -1,0 +1,23 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# ambiente local
+.env
+.env.*
+!.env.example
+
+# prisma client gerado (npm install / prisma generate recria)
+apps/api/src/generated/
+
+# arquivos enviados em runtime
+apps/api/uploads/
+uploads/
+
+# logs e lixo de editor/SO
+*.log
+npm-debug.log*
+.DS_Store
+.idea/
+.vscode/

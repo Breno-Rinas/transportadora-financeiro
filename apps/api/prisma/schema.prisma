@@ -1,0 +1,270 @@
+// Modelo de dados — ver CLAUDE.md, seção "Modelo de dados".
+// Dinheiro: sempre Int em centavos. Datas sem hora: @db.Date. Instantes: timestamptz.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum TripStatus {
+  CREATED
+  LOADED
+  ADVANCE_PAID
+  UNLOADED
+  PROOFS_RECEIVED
+  BALANCE_PAID
+  CANCELLED // reservado para o bônus: nenhuma regra o usa ainda
+
+  @@map("trip_status")
+}
+
+enum TripEventType {
+  CTE_ISSUED
+  LOADING_PHOTO_ATTACHED
+  UNLOADED
+  PROOFS_RECEIVED
+
+  @@map("trip_event_type")
+}
+
+enum AttachmentKind {
+  LOADING_PHOTO
+  DELIVERY_RECEIPT
+
+  @@map("attachment_kind")
+}
+
+enum TitleNature {
+  PAYABLE
+  RECEIVABLE
+
+  @@map("title_nature")
+}
+
+enum TitleKind {
+  ADVANCE
+  BALANCE
+  CLIENT_FREIGHT
+
+  @@map("title_kind")
+}
+
+enum TitleStatus {
+  OPEN
+  SCHEDULED
+  PAID
+  CANCELLED
+
+  @@map("title_status")
+}
+
+// ---------------------------------------------------------------------------
+// Cadastros
+// ---------------------------------------------------------------------------
+
+/// Cliente (tomador do serviço).
+model Client {
+  id              String   @id @default(uuid()) @db.Uuid
+  legalName       String
+  /// 14 dígitos, sem máscara.
+  cnpj            String   @unique
+  /// Prazo de pagamento em dias (>= 0), somado à emissão do CT-e.
+  paymentTermDays Int
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  trips Trip[]
+
+  @@map("clients")
+}
+
+/// Motorista terceiro.
+model Driver {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  /// CPF (11) ou CNPJ (14), só dígitos.
+  document     String   @unique
+  /// `AAA9999` ou Mercosul `AAA9A99`, maiúscula e sem máscara.
+  vehiclePlate String
+  pixKey       String
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  trips Trip[]
+
+  @@map("drivers")
+}
+
+// ---------------------------------------------------------------------------
+// Viagem e fatos operacionais
+// ---------------------------------------------------------------------------
+
+model Trip {
+  id                       String     @id @default(uuid()) @db.Uuid
+  /// Sequencial exibido como VG-0001.
+  code                     Int        @unique @default(autoincrement())
+  clientId                 String     @db.Uuid
+  driverId                 String     @db.Uuid
+  origin                   String
+  destination              String
+  product                  String
+  weightKg                 Int
+  /// Frete cotado: só para projeção de margem e pré-preenchimento do CT-e.
+  quotedClientFreightCents Int?
+  status                   TripStatus @default(CREATED)
+  createdAt                DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime   @updatedAt @db.Timestamptz(3)
+
+  client        Client             @relation(fields: [clientId], references: [id])
+  driver        Driver             @relation(fields: [driverId], references: [id])
+  agreement     FreightAgreement?
+  cte           Cte?
+  attachments   Attachment[]
+  events        TripEvent[]
+  statusChanges TripStatusChange[]
+  titles        Title[]
+
+  @@index([status])
+  @@index([clientId])
+  @@index([driverId])
+  @@index([createdAt])
+  @@map("trips")
+}
+
+/// Acordo de frete com o motorista. Separado de Trip para permitir renegociação/histórico.
+model FreightAgreement {
+  id                 String   @id @default(uuid()) @db.Uuid
+  tripId             String   @unique @db.Uuid
+  /// Frete total a pagar ao motorista (> 0).
+  driverFreightCents Int
+  /// Percentual do adiantamento: 50 ou 70.
+  advancePercent     Int
+  createdAt          DateTime @default(now()) @db.Timestamptz(3)
+
+  trip Trip @relation(fields: [tripId], references: [id])
+
+  @@map("freight_agreements")
+}
+
+model Cte {
+  id                 String   @id @default(uuid()) @db.Uuid
+  tripId             String   @unique @db.Uuid
+  number             Int
+  series             Int
+  issuedAt           DateTime @db.Timestamptz(3)
+  /// Frete a receber do cliente (> 0).
+  clientFreightCents Int
+  createdAt          DateTime @default(now()) @db.Timestamptz(3)
+
+  trip   Trip        @relation(fields: [tripId], references: [id])
+  events TripEvent[]
+
+  @@unique([series, number])
+  @@map("ctes")
+}
+
+/// Comprovante (arquivo enviado).
+model Attachment {
+  id           String         @id @default(uuid()) @db.Uuid
+  tripId       String         @db.Uuid
+  kind         AttachmentKind
+  storagePath  String
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  sha256       String
+  createdAt    DateTime       @default(now()) @db.Timestamptz(3)
+
+  trip   Trip        @relation(fields: [tripId], references: [id])
+  events TripEvent[]
+
+  @@index([tripId])
+  @@map("attachments")
+}
+
+/// Fato operacional. Único por (viagem, tipo): garante idempotência no banco.
+model TripEvent {
+  id           String        @id @default(uuid()) @db.Uuid
+  tripId       String        @db.Uuid
+  type         TripEventType
+  /// Quando aconteceu (informado pelo usuário).
+  occurredAt   DateTime      @db.Timestamptz(3)
+  /// Quando foi registrado no sistema.
+  recordedAt   DateTime      @default(now()) @db.Timestamptz(3)
+  cteId        String?       @db.Uuid
+  attachmentId String?       @db.Uuid
+  note         String?
+
+  trip       Trip        @relation(fields: [tripId], references: [id])
+  cte        Cte?        @relation(fields: [cteId], references: [id])
+  attachment Attachment? @relation(fields: [attachmentId], references: [id])
+
+  @@unique([tripId, type])
+  @@map("trip_events")
+}
+
+/// Histórico/auditoria das transições de status da viagem.
+model TripStatusChange {
+  id         String      @id @default(uuid()) @db.Uuid
+  tripId     String      @db.Uuid
+  fromStatus TripStatus?
+  toStatus   TripStatus
+  /// O que causou a transição (ex.: CTE_ISSUED, ADVANCE_PAID).
+  trigger    String
+  changedAt  DateTime    @default(now()) @db.Timestamptz(3)
+
+  trip Trip @relation(fields: [tripId], references: [id])
+
+  @@index([tripId, changedAt])
+  @@map("trip_status_changes")
+}
+
+// ---------------------------------------------------------------------------
+// Financeiro
+// ---------------------------------------------------------------------------
+
+model Title {
+  id           String      @id @default(uuid()) @db.Uuid
+  tripId       String      @db.Uuid
+  nature       TitleNature
+  kind         TitleKind
+  amountCents  Int
+  /// Nulo no saldo até os comprovantes chegarem.
+  dueDate      DateTime?   @db.Date
+  scheduledFor DateTime?   @db.Date
+  status       TitleStatus @default(OPEN)
+  createdAt    DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime    @updatedAt @db.Timestamptz(3)
+
+  trip     Trip      @relation(fields: [tripId], references: [id])
+  payments Payment[]
+
+  @@unique([tripId, kind])
+  @@index([nature, status])
+  @@index([dueDate])
+  @@index([scheduledFor])
+  @@map("titles")
+}
+
+/// Baixa. Entidade separada para suportar baixa parcial no futuro; hoje só integral.
+model Payment {
+  id          String   @id @default(uuid()) @db.Uuid
+  titleId     String   @db.Uuid
+  paidOn      DateTime @db.Date
+  amountCents Int
+  note        String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  title Title @relation(fields: [titleId], references: [id])
+
+  @@index([titleId])
+  @@map("payments")
+}
