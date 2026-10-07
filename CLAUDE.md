@@ -22,7 +22,7 @@ Fora do escopo: SEFAZ, banco/PIX/boleto/CNAB, login/perfis, multiempresa, concil
 - **Prisma 7:** `apps/api/prisma.config.ts` (datasource e seed), client gerado em `apps/api/src/generated/prisma` (ignorado pelo git; regenerar com `npm run db:generate -w apps/api` depois de mexer no schema), driver adapter `pg`. Import: `../generated/prisma/client.js`. `src/infra/prisma.ts` exporta `prisma`, `createPrismaClient(url)` (testes E2E usam `TEST_DATABASE_URL`) e o tipo `PrismaTx`. Alterou o schema? `npm run db:migrate -w apps/api -- --name <nome>` e commite a migration.
 - **API em ESM (NodeNext):** imports relativos levam extensão `.js` (`import { x } from './x.js'`), mesmo sendo arquivos `.ts`. O build (`npm run build -w apps/api`) compila para `dist/`.
 - **Esqueleto HTTP:** `buildApp(options?)` em `http/app.ts` (aceita `prisma`, `clock`, `uploadDir`, `businessTz`, `logger`; sem logs quando `NODE_ENV=test`) já registra CORS, multipart (10 MB) e `/uploads/*`. Rotas novas entram em `http/routes/` e são registradas em `http/routes/index.ts` (prefixo `/api`; recebe as `AppDeps`). Em `app.inject` o multipart funciona com `FormData` nativo.
-- **Erros:** `http/error-handler.ts` tem `statusByCode` (code -> status), que começa vazio: cada `DomainError.code` novo precisa entrar ali (409/422). Código sem mapeamento vira 500 `INTERNAL_ERROR` e é logado. `ZodError` vira 400 `VALIDATION_ERROR` com `details: { path, message }[]`; mensagens do Zod em pt-BR (`z.locales.ptBR()`).
+- **Erros:** `http/error-handler.ts` tem `statusByCode`, um `Record<DomainErrorCode, number>`: cada código novo em `domain/errors.ts` precisa entrar ali (o typecheck cobra). Código sem mapeamento vira 500 `INTERNAL_ERROR` e é logado. `ZodError` vira 400 `VALIDATION_ERROR` com `details: { path, message }[]`; mensagens do Zod em pt-BR (`z.locales.ptBR()`).
 - **Env:** `src/infra/env.ts` (Zod) lê `DATABASE_URL`, `PORT`, `HOST`, `BUSINESS_TZ`, `UPLOAD_DIR`, `CORS_ORIGIN`; todos têm default de desenvolvimento, então não precisa de `.env`. Ver `.env.example`.
 - **Mantine 9** (difere do 7/8): `Grid` usa `gap` (não `gutter`), `Text`/`Anchor` usam `c` (não `color`), `Collapse` usa `expanded` (não `in`), raio padrão `md`. Imports de CSS já estão em `src/main.tsx`.
 - **Web:** `src/api/client.ts` expõe `api.get/post/postForm` (prefixo `/api` automático) e `ApiError` (`status`, `code`, `message`, `details`); falha de rede vira `NETWORK_ERROR` e corpo fora do formato vira `UNEXPECTED_RESPONSE`. O `QueryClient` está em `src/api/query-client.ts` (`refetchOnWindowFocus` ligado, sem retry em 4xx). As páginas de `src/pages/` são placeholders a substituir.
@@ -58,6 +58,18 @@ apps/api/src/
 - Rotas são finas: validam com Zod, chamam um caso de uso e serializam.
 - Toda mutação de viagem ou título roda em `prisma.$transaction` e começa com `SELECT id FROM trips WHERE id = $1 FOR UPDATE` (helper `lockTrip(tx, tripId)`). Isso evita corrida entre CT-e e foto chegando ao mesmo tempo.
 - Relógio injetável (`Clock`) para testes. Fuso de negócio `America/Sao_Paulo` (env `BUSINESS_TZ`); "hoje" é sempre calculado nesse fuso.
+
+### Notas da API (fases 3 e 4)
+
+- **application/:** um caso de uso por arquivo (`create-client`, `list-clients`, `create-driver`, `list-drivers`, `create-trip`, `list-trips`, `get-trip-detail`, `register-cte`, `attach-loading-photo`, `register-unloading`, `register-proofs`, `schedule-titles`, `settle-title`, `list-titles`, `get-dashboard`), todos recebendo um `UseCaseContext` (`prisma`, `clock`, `businessTz`, `storage`). Apoio: `trip-state` (carrega a viagem e monta `TripFacts` e o fingerprint do R6), `trip-event` (esqueleto dos eventos: transação → `lockTrip` → estado → domínio decide → grava), `trip-progress` (gera os títulos e grava cada passo de `advanceLifecycle`), `title-view` (data efetiva, travas e `bucket`) e `conflicts` (P2002 → código de domínio pelo nome do índice: `clients_cnpj_key`/`drivers_document_key` → `DOCUMENT_ALREADY_EXISTS`, `ctes_series_number_key` → `CTE_NUMBER_IN_USE`, `trip_events_tripId_type_key`/`ctes_tripId_key`/`titles_tripId_kind_key` → `EVENT_ALREADY_REGISTERED`).
+- **Instantes gravados vêm do `Clock`** (`createdAt`, `recordedAt`, `changedAt`, `updatedAt`), não do `now()` do banco: testes e seed controlam o tempo.
+- **infra/:** `storage.ts` (tipo detectado pela assinatura do arquivo, não pelo mimetype declarado; nome `<uuid>.<ext>`; sha256), `trip-lock.ts` (`lockTrip`), `db-date.ts` (`LocalDate` ↔ `@db.Date` sempre por UTC) e `unique-violation.ts`. A foto só é gravada em disco quando o evento é novo e é apagada se a transação falhar.
+- **Upload inválido** (vazio ou fora de JPEG/PNG/WEBP) → 400 `VALIDATION_ERROR` com `details: [{ path: 'file' }]`; acima de 10 MB o multipart responde 413 `PAYLOAD_TOO_LARGE`.
+- **Linha do tempo:** ordenada por `at` (evento: `occurredAt`; baixa: `createdAt`; transição: `changedAt`). Em empate: evento → baixa → transição, e transições do mesmo instante na ordem do ciclo.
+- **`POST /titles/schedule` responde sempre 200** (R11); a recusa vem em `rejected` com o código do domínio (ex.: `BALANCE_LOCKED`, que nas rotas unitárias seria 422).
+- **Filtros:** `from`/`to` de `/trips` usam a data de negócio do `createdAt` (`startOfBusinessDay`); `dueFrom`/`dueTo` de `/titles` usam a data efetiva; `locked=true` = algum motivo de trava (mesmo critério do painel). `bucket` é null em título pago ou cancelado. `POST /trips` com cliente ou motorista inexistente → 404.
+- **E2E:** `test/acceptance.test.ts` aplica as migrations no `transportadora_test` (via `db:deploy:test`) e faz `TRUNCATE` no `beforeAll`; precisa do banco do Docker no ar.
+- **Seed:** usa os casos de uso com o relógio posicionado em cada passo do roteiro; a foto é um PNG gerado em `prisma/seed-photo.ts`. No container roda compilado (`node dist/prisma/seed.js`).
 
 ## Convenções
 
@@ -166,7 +178,7 @@ Por quê: o roteiro de aceite registra descarga e comprovantes **antes** da baix
 ### Domínio implementado (API pública — use estas funções, não reimplemente)
 
 - `shared/money.ts`: `splitDriverFreight`, `assertPositiveCents`, `isAdvancePercent`.
-- `shared/local-date.ts`: `LocalDate`, `DateRange`, `toBusinessDate`, `addDays`, `compareLocalDate`, `isWithinRange`, `getMonthRange`, `assertValidLocalDate`.
+- `shared/local-date.ts`: `LocalDate`, `DateRange`, `toBusinessDate`, `addDays`, `compareLocalDate`, `isWithinRange`, `getMonthRange`, `assertValidLocalDate`, `startOfBusinessDay` (primeiro instante da data no fuso; filtros de período sobre instantes).
 - `shared/documents.ts`: `parseCnpj`, `parseDriverDocument` e `parsePlate` removem a máscara, validam e devolvem o valor a salvar (lançam `INVALID_DOCUMENT`).
 - `trip/facts.ts`: `TripFacts`, `buildTripFacts(events, titles)`, `isLoaded`, `getLoadedAt`.
 - `trip/lifecycle.ts`: `advanceLifecycle`, `INITIAL_STATUS_CHANGE`. Gatilhos gravados em `TripStatusChange.trigger`: `TRIP_CREATED`, `CTE_AND_LOADING_PHOTO_REGISTERED`, `ADVANCE_SETTLED`, `UNLOADING_REGISTERED`, `PROOFS_REGISTERED`, `BALANCE_SETTLED`.
@@ -235,7 +247,7 @@ O mapeamento de `code` para status HTTP fica em `http/error-handler.ts`.
 
 ## Frontend (`apps/web`)
 
-**Rotas:** `/` (Painel), `/viagens`, `/viagens/:id`, `/financeiro` (contas a pagar e a receber, filtros na querystring), `/cadastros` (clientes e motoristas em abas).
+**Rotas:** `/` (Painel), `/viagens`, `/viagens/:id`, `/financeiro` (contas a pagar e a receber, filtros na querystring), `/clientes` e `/motoristas` (tabela + modal de criação; itens próprios no menu lateral, como no sistema real).
 
 **Estrutura:**
 - `src/api/`: cliente fetch tipado e tipos dos DTOs, espelhando a API sem regra. `ApiError` carrega o `code` e a `message` do backend.
@@ -273,6 +285,51 @@ O mapeamento de `code` para status HTTP fica em `http/error-handler.ts`.
   - Agenda ordenada por data efetiva e agrupada em Vencidos / Hoje / Próximos 7 dias / Depois / Sem data.
   - Seleção múltipla com "Programar selecionados" (modal de data); mostra o que foi programado e o que foi recusado, com o motivo.
   - "Dar baixa" (modal com data = hoje e valor = valor do título).
+
+## Design (referência: sistema real da empresa, "FretouBR")
+
+O módulo tem que parecer uma tela nativa do sistema FretouBR. A referência é o quadro "Cargas" do sistema real. Imagem (não commitar): `/tmp/claude-1000/-home-brenorinas-transportadora-financeiro/f548df42-fd08-4a61-927a-ff164bc824a6/images/1.jpg`.
+
+**Base**
+- Fonte Inter (`@fontsource-variable/inter`). UI densa: textos de 11 a 13 px; títulos de card com 13 px e peso 500–600; título da página com 20 px e peso 700.
+- Ícones `@tabler/icons-react` em traço fino, 16–18 px no menu e 12–14 px nos cards.
+- Mantine com `primaryColor: 'indigo'`, raio de 8 px em cards e colunas e de 6 px em botões e inputs.
+
+**Layout**
+- **Sidebar** fixa de 215 px, fundo azul-marinho escuro `#1b2232`.
+  - Marca no topo: quadrado indigo `#4c6ef5` com "F" branco + "FretouBR" em branco e negrito.
+  - Seções com rótulo em maiúsculas, 10–11 px, cinza `#8b93a7` e espaçamento entre letras: **FINANCEIRO** (Painel, Contas a pagar e receber), **OPERACIONAL** (Viagens) e **CADASTROS** (Clientes, Motoristas).
+  - Item: ícone + rótulo, 14 px, cor `#d0d5e0`. Item ativo com fundo `#2b3447`, texto branco em negrito e cantos arredondados.
+- **Topbar** clara sem borda forte.
+  - À esquerda, ícone de recolher a sidebar.
+  - À direita, sino com badge vermelho e avatar redondo "A". O badge mostra a quantidade de títulos vencidos + vencendo hoje, vinda do dashboard.
+- **Página:** fundo `#f6f7f9`. Cabeçalho com o título à esquerda e, à direita, input de busca com ícone de lupa (placeholder do tipo "Cliente, origem ou destino…") e select de filtro com ícone de funil ("Todos os clientes").
+
+**Quadro (padrão das telas de lista)**
+- Colunas lado a lado, com rolagem horizontal, largura ~240 px, fundo `#f1f2f5`, raio de 8 px.
+- Cabeçalho da coluna: rótulo e contagem num pill cinza.
+- **Coluna em destaque** ("Hoje"): fundo `#e4e9fb`, sobretítulo "HOJE" em maiúsculas pequenas, rótulo em indigo e contagem num círculo indigo cheio. Os vencidos usam a mesma estrutura em vermelho claro.
+- **Coluna vazia:** caixa tracejada com ícone de cubo e texto cinza ("Sem títulos", "Sem viagens").
+
+**Card**
+- Fundo branco, borda `#e3e6ec`, **borda esquerda de 3 px** colorida (indigo claro `#a5b4fc` por padrão), sombra mínima e padding de ~12 px.
+- Topo: nome (cliente/motorista) com 13 px e peso 500, à esquerda; badge de status em pill à direita, no estilo do "Prospectando" (variante light com borda, por exemplo violeta `#f3f0ff` / `#7048e8`). Abaixo do nome, o código cinza pequeno (`VG-0001`).
+- Rota: ● verde `#40c057` + origem em negrito; ● vermelho `#fa5252` + destino em cinza.
+- Linha de meta: ícone de relógio + data em cinza à esquerda e valor em negrito à direita. O valor sai **sempre** em `formatBRL` (R$ 6.500,00). A referência mostra "R$ 6500.00" errado; nós não repetimos esse erro.
+- **Caixa de nota:** fundo `#f1f5fd`, borda `#dbe4ff`, ícone de documento e texto 11 px `#5c6f9a`, truncado. Aqui entram o próximo passo ("Aguardando foto do carregamento") e o motivo da trava (nas travas, variante âmbar/vermelha).
+- Linha de botões pequenos (xs, light com borda):
+  - "Histórico": cinza, ícone de relógio com seta.
+  - Ação amarela (fundo `#fff9db`, texto `#e67700`): no lugar do "Editar".
+  - "Detalhes": azul-indigo claro, ícone de olho.
+- Botão largo outline com ícone (no estilo do "Atribuir Veículo"): a ação principal do card, como "Registrar CT-e", "Programar pagamento" ou "Dar baixa".
+- Rodapé com links sutis (estilo de "Copiar oferta" cinza e "Cancelar" vermelho), usados só quando fizer sentido.
+
+**Como aplicar nas telas**
+- **Contas a pagar e receber** (`/financeiro`): quadro por data efetiva com as colunas Vencidos (destaque vermelho) → Hoje (destaque indigo) → Amanhã → um dia por coluna até +6 dias ("quarta, 07/10", com dayjs pt-br a partir da string `YYYY-MM-DD`) → Depois → Sem data.
+  - A coluna do título vem de `bucket`, e dentro de WITHIN_WEEK o agrupamento é por `effectiveDate`. Agrupar por campo é apresentação; não é regra.
+  - Abas A pagar / A receber no cabeçalho. Card com checkbox de seleção; com algo selecionado, aparece uma barra fixa "Programar selecionados (n)".
+- **Viagens** (`/viagens`): quadro com uma coluna por status (Criada → Carregada → Adiantamento pago → Descarregada → Comprovantes recebidos → Finalizada). O card mostra o frete do cliente, o primeiro passo pendente na caixa de nota e o badge vermelho "Margem negativa" quando `margin.isNegative`. Filtros de busca, cliente, motorista e status no cabeçalho, refletidos na querystring.
+- **Painel** e **Detalhe da viagem** usam a mesma linguagem: cards brancos com borda esquerda colorida, caixas de nota, badges em pill e botões pequenos.
 
 ## Seed (`apps/api/prisma/seed.ts`)
 
