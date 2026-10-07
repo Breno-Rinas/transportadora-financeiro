@@ -1,7 +1,4 @@
-/** Formato de erro do backend: `{ error: { code, message, details? } }`. */
-interface ApiErrorBody {
-  error: { code: string; message: string; details?: unknown };
-}
+import type { ApiErrorBody } from './types';
 
 /** Erro de uma chamada à API. `code` e `message` vêm do backend (message já em pt-BR). */
 export class ApiError extends Error {
