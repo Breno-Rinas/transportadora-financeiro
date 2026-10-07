@@ -1,0 +1,38 @@
+.wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--fb-border);
+  border-radius: 8px;
+  background: var(--fb-surface);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.table {
+  --table-border-color: var(--fb-border-soft);
+  --table-hover-color: #f8f9fc;
+}
+
+.table th {
+  padding: 10px 16px;
+  background: #fafbfc;
+  color: var(--fb-label);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 11px 16px;
+  color: var(--fb-text);
+  font-size: 13px;
+}
+
+.table td[data-numeric],
+.table th[data-numeric] {
+  text-align: right;
+}
+
+.muted {
+  color: var(--fb-muted);
+}

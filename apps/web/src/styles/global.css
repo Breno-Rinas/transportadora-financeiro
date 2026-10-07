@@ -1,0 +1,43 @@
+/* Tokens visuais do FretouBR (CLAUDE.md, "Design"). Os componentes leem estas variáveis. */
+:root {
+  --fb-page-bg: #f6f7f9;
+  --fb-surface: #ffffff;
+  --fb-border: #e3e6ec;
+  --fb-border-soft: #eef0f4;
+  --fb-column-bg: #f1f2f5;
+  --fb-text: #1f2430;
+  --fb-muted: #868e9c;
+  --fb-label: #8b93a7;
+  --fb-indigo: #4c6ef5;
+  --fb-indigo-accent: #a5b4fc;
+  --fb-indigo-soft: #e4e9fb;
+  --fb-red: #fa5252;
+  --fb-red-soft: #ffe6e6;
+  --fb-green: #40c057;
+  --fb-sidebar-bg: #1b2232;
+  --fb-sidebar-active: #2b3447;
+  --fb-sidebar-width: 215px;
+  --fb-header-height: 52px;
+}
+
+html,
+body {
+  background: var(--fb-page-bg);
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Barras de rolagem finas, como no quadro de referência. */
+.fb-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #c4c9d4 transparent;
+}
+
+/* Controles de 32 px (o `sm` do Mantine tem 36 px), como nos filtros do sistema de referência. */
+.mantine-Input-wrapper {
+  --input-height-sm: calc(2rem * var(--mantine-scale));
+}
+
+.mantine-Button-root {
+  --button-height-sm: calc(2rem * var(--mantine-scale));
+}

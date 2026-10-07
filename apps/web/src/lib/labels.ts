@@ -22,7 +22,7 @@ export const TRIP_STATUS_LABEL: Record<TripStatus, string> = {
   LOADED: 'Carregada',
   ADVANCE_PAID: 'Adiantamento pago',
   UNLOADED: 'Descarregada',
-  PROOFS_RECEIVED: 'Canhoto recebido',
+  PROOFS_RECEIVED: 'Comprovantes recebidos',
   BALANCE_PAID: 'Finalizada',
   CANCELLED: 'Cancelada',
 };

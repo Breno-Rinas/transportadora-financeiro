@@ -1,0 +1,107 @@
+.navbar {
+  background: var(--fb-sidebar-bg);
+  border: none;
+  padding: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--fb-header-height);
+  padding: 0 16px;
+  flex-shrink: 0;
+}
+
+.brandMark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--fb-indigo);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.brandName {
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 6px 16px;
+}
+
+.section {
+  padding: 18px 10px 6px;
+  color: var(--fb-label);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.section:first-child {
+  padding-top: 6px;
+}
+
+.link {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 34px;
+  padding: 0 9px;
+  margin-bottom: 2px;
+  border-radius: 6px;
+  color: #d0d5e0;
+  font-size: 13px;
+  letter-spacing: -0.005em;
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  transition: background-color 120ms ease;
+}
+
+.link:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.linkActive,
+.linkActive:hover {
+  background: var(--fb-sidebar-active);
+  color: #fff;
+  font-weight: 700;
+}
+
+.linkIcon {
+  flex-shrink: 0;
+}
+
+.header {
+  background: var(--fb-page-bg);
+  border: none;
+}
+
+.headerInner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
+  padding: 0 20px;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.main {
+  background: var(--fb-page-bg);
+}

@@ -177,6 +177,13 @@ export interface TripListItem {
   client: ClientRef;
   driver: DriverRef;
   createdAt: IsoDateTime;
+  /**
+   * Frete a receber do cliente: o valor do CT-e ou, sem CT-e, o frete cotado; `null` se nenhum
+   * dos dois existe.
+   */
+  clientFreightCents: number | null;
+  /** Frete total a pagar ao motorista (do acordo de frete). */
+  driverFreightCents: number;
   /** O primeiro item é o passo que a UI destaca. */
   pendingSteps: PendingStep[];
   margin: Margin | null;

@@ -104,6 +104,12 @@ export function formatDateTime(iso: string | null | undefined): string {
   return `${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute}`;
 }
 
+/** Instante ISO -> `12/03/2026`, o dia no fuso de negócio (sem a hora). Vazio vira traço. */
+export function formatInstantDate(iso: string | null | undefined): string {
+  const dateTime = formatDateTime(iso);
+  return dateTime.length > 10 && dateTime.charAt(10) === ' ' ? dateTime.slice(0, 10) : dateTime;
+}
+
 // ---------------------------------------------------------------------------
 // Documentos e placa: salvos sem máscara; a máscara é só de exibição.
 // As máscaras funcionam com entrada parcial, então servem para campos de digitação.
@@ -135,17 +141,46 @@ function applyMask(chars: string, pattern: string): string {
 const CPF_PATTERN = '###.###.###-##';
 const CNPJ_PATTERN = '##.###.###/####-##';
 const CPF_LENGTH = 11;
-const CNPJ_LENGTH = 14;
+/** O CNPJ alfanumérico (IN RFB 2.229/2024) tem 12 caracteres [0-9A-Z] e 2 dígitos verificadores. */
+const CNPJ_BASE_LENGTH = 12;
+const CNPJ_CHECK_DIGITS = 2;
 
-/** `12345678000195` -> `12.345.678/0001-95`. */
-export function maskCnpj(value: string): string {
-  return applyMask(onlyDigits(value).slice(0, CNPJ_LENGTH), CNPJ_PATTERN);
+function alphanumericUpper(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
-/** Até 11 dígitos usa a máscara de CPF (`123.456.789-09`); acima disso, a de CNPJ. */
+/**
+ * CNPJ para salvar: maiúsculas, letras e números, no máximo 14 caracteres. Os 2 últimos (dígitos
+ * verificadores) só aceitam número, então uma letra nessa posição é descartada.
+ */
+export function normalizeCnpj(value: string): string {
+  const chars = alphanumericUpper(value);
+  return (
+    chars.slice(0, CNPJ_BASE_LENGTH) +
+    onlyDigits(chars.slice(CNPJ_BASE_LENGTH)).slice(0, CNPJ_CHECK_DIGITS)
+  );
+}
+
+/** Até 11 dígitos (sem letras) é CPF; com letra ou acima disso, CNPJ (alfanumérico). */
+function isCpfLike(chars: string): boolean {
+  return chars.length <= CPF_LENGTH && /^\d*$/.test(chars);
+}
+
+/** CPF/CNPJ para salvar, sem máscara. */
+export function normalizeDocument(value: string): string {
+  const chars = alphanumericUpper(value);
+  return isCpfLike(chars) ? chars : normalizeCnpj(chars);
+}
+
+/** `12345678000195` -> `12.345.678/0001-95`; aceita o CNPJ alfanumérico (`12ABC34501DE35`). */
+export function maskCnpj(value: string): string {
+  return applyMask(normalizeCnpj(value), CNPJ_PATTERN);
+}
+
+/** Até 11 dígitos usa a máscara de CPF (`123.456.789-09`); acima disso ou com letra, a de CNPJ. */
 export function maskCpfCnpj(value: string): string {
-  const digits = onlyDigits(value).slice(0, CNPJ_LENGTH);
-  return applyMask(digits, digits.length <= CPF_LENGTH ? CPF_PATTERN : CNPJ_PATTERN);
+  const normalized = normalizeDocument(value);
+  return applyMask(normalized, isCpfLike(normalized) ? CPF_PATTERN : CNPJ_PATTERN);
 }
 
 /** `ABC1D23` -> `ABC-1D23` (formato antigo e Mercosul). */

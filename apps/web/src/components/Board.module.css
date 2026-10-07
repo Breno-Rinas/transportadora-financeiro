@@ -1,0 +1,133 @@
+.board {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: #c4c9d4 transparent;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 var(--board-column-width, 248px);
+  width: var(--board-column-width, 248px);
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--fb-column-bg);
+}
+
+.columnIndigo {
+  background: var(--fb-indigo-soft);
+}
+
+.columnRed {
+  background: var(--fb-red-soft);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 10px;
+}
+
+.headerHighlight {
+  padding: 6px 8px 12px;
+}
+
+.heading {
+  min-width: 0;
+}
+
+.eyebrow {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.label {
+  display: block;
+  overflow: hidden;
+  color: var(--fb-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.labelIndigo,
+.eyebrowIndigo {
+  color: #4263eb;
+}
+
+.labelRed,
+.eyebrowRed {
+  color: #e03131;
+}
+
+.count {
+  flex-shrink: 0;
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #e1e4ea;
+  color: #5b6372;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.countIndigo,
+.countRed {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 600;
+}
+
+.countIndigo {
+  background: var(--fb-indigo);
+}
+
+.countRed {
+  background: var(--fb-red);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  max-height: var(--board-body-max-height, calc(100vh - 240px));
+  padding: 1px 2px 2px;
+  scrollbar-width: thin;
+  scrollbar-color: #c4c9d4 transparent;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 84px;
+  padding: 14px 10px;
+  border: 1px dashed #d0d4dd;
+  border-radius: 8px;
+  color: #aab0bd;
+  font-size: 11px;
+  text-align: center;
+}

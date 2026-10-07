@@ -4,12 +4,15 @@ import {
   formatBRLNumber,
   formatDate,
   formatDateTime,
+  formatInstantDate,
   formatPercent,
   formatTripCode,
   formatWeightKg,
   maskCnpj,
   maskCpfCnpj,
   maskPlate,
+  normalizeCnpj,
+  normalizeDocument,
   normalizePlate,
   onlyDigits,
   parseBRL,
@@ -148,6 +151,18 @@ describe('formatDateTime', () => {
   });
 });
 
+describe('formatInstantDate', () => {
+  it('devolve só o dia no fuso de negócio', () => {
+    expect(formatInstantDate('2026-03-12T17:30:00.000Z')).toBe('12/03/2026');
+    expect(formatInstantDate('2026-03-13T01:15:00Z')).toBe('12/03/2026');
+  });
+
+  it('devolve traço para vazio e o texto original quando não é uma data', () => {
+    expect(formatInstantDate(null)).toBe('—');
+    expect(formatInstantDate('não é data')).toBe('não é data');
+  });
+});
+
 describe('máscaras', () => {
   it('maskCnpj formata e aceita entrada parcial', () => {
     expect(maskCnpj('12345678000195')).toBe('12.345.678/0001-95');
@@ -167,6 +182,30 @@ describe('máscaras', () => {
     expect(maskCpfCnpj('1234')).toBe('123.4');
     expect(maskCpfCnpj('123456789012')).toBe('12.345.678/9012');
     expect(maskCpfCnpj('12345678000195')).toBe('12.345.678/0001-95');
+  });
+
+  it('maskCnpj aceita o CNPJ alfanumérico, em maiúsculas', () => {
+    expect(maskCnpj('12abc34501de35')).toBe('12.ABC.345/01DE-35');
+    expect(maskCnpj('12.ABC.345/01DE-35')).toBe('12.ABC.345/01DE-35');
+    expect(maskCnpj('12ABC345')).toBe('12.ABC.345');
+  });
+
+  it('maskCnpj só aceita número nos 2 dígitos verificadores', () => {
+    expect(maskCnpj('12ABC34501DEAB')).toBe('12.ABC.345/01DE');
+    expect(maskCnpj('12ABC34501DE3A')).toBe('12.ABC.345/01DE-3');
+  });
+
+  it('maskCpfCnpj troca para a máscara de CNPJ quando aparece letra', () => {
+    expect(maskCpfCnpj('12A')).toBe('12.A');
+    expect(maskCpfCnpj('12abc34501de35')).toBe('12.ABC.345/01DE-35');
+  });
+
+  it('normalizeCnpj e normalizeDocument devolvem o formato salvo, sem máscara', () => {
+    expect(normalizeCnpj('12.abc.345/01de-35')).toBe('12ABC34501DE35');
+    expect(normalizeCnpj('12.345.678/0001-95')).toBe('12345678000195');
+    expect(normalizeDocument('123.456.789-09')).toBe('12345678909');
+    expect(normalizeDocument('12.345.678/0001-95')).toBe('12345678000195');
+    expect(normalizeDocument('12.abc.345/01de-35')).toBe('12ABC34501DE35');
   });
 
   it('maskPlate aceita o formato antigo e o Mercosul, em maiúsculas', () => {

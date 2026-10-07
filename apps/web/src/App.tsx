@@ -10,7 +10,7 @@ import { theme } from './theme';
 
 export function App() {
   return (
-    <MantineProvider theme={theme} defaultColorScheme="light">
+    <MantineProvider theme={theme} forceColorScheme="light">
       <DatesProvider settings={{ locale: 'pt-br', firstDayOfWeek: 0 }}>
         <QueryClientProvider client={queryClient}>
           <ModalsProvider>

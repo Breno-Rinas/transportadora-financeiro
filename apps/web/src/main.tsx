@@ -1,7 +1,9 @@
+import '@fontsource-variable/inter';
 import '@mantine/core/styles.css';
 import '@mantine/dates/styles.css';
 import '@mantine/notifications/styles.css';
 import 'dayjs/locale/pt-br';
+import './styles/global.css';
 import dayjs from 'dayjs';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
