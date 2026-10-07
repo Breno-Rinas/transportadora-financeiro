@@ -50,6 +50,9 @@ export interface TripListItemDto {
   client: ClientRefDto;
   driver: DriverRefDto;
   createdAt: IsoDateTime;
+  /** Valor do CT-e ou, sem CT-e, o frete cotado; null se nenhum dos dois. */
+  clientFreightCents: number | null;
+  driverFreightCents: number;
   pendingSteps: PendingStep[];
   margin: Margin | null;
 }

@@ -5,6 +5,7 @@ import type { TripEventType } from '../domain/trip/types.js';
 import type { FreightAgreement, Prisma } from '../generated/prisma/client.js';
 import type { PrismaTx } from '../infra/prisma.js';
 
+// Formato do estado carregado; `loadTripState` busca cada relação numa consulta própria.
 const tripStateInclude = {
   client: { select: { paymentTermDays: true } },
   agreement: true,
@@ -37,19 +38,38 @@ export async function getTripIdOfTitle(tx: PrismaTx, titleId: string): Promise<s
   return title.tripId;
 }
 
-/** Carrega a viagem com eventos, CT-e e títulos. Chamar depois de `lockTrip`. */
+/**
+ * Carrega a viagem com eventos, CT-e e títulos. Chamar depois de `lockTrip`.
+ *
+ * Uma consulta por vez: um `include` com várias relações faz o Prisma buscá-las em paralelo, e
+ * dentro da transação todas disputariam a mesma conexão (o pg 8 avisa e o pg 9 vai recusar).
+ */
 export async function loadTripState(tx: PrismaTx, tripId: string): Promise<TripState> {
-  const trip = await tx.trip.findUnique({ where: { id: tripId }, include: tripStateInclude });
+  const trip = await tx.trip.findUnique({ where: { id: tripId } });
   if (trip === null) throw tripNotFound(tripId);
-  if (trip.agreement === null) {
+  const client = await tx.client.findUniqueOrThrow({
+    where: { id: trip.clientId },
+    select: tripStateInclude.client.select,
+  });
+  const agreement = await tx.freightAgreement.findUnique({ where: { tripId } });
+  if (agreement === null) {
     throw new Error(`Viagem ${tripId} sem acordo de frete: o cadastro sempre cria os dois juntos.`);
   }
-  return { trip, agreement: trip.agreement, facts: buildTripFacts(trip.events, trip.titles) };
+  const cte = await tx.cte.findUnique({ where: { tripId } });
+  const events = await tx.tripEvent.findMany({
+    where: { tripId },
+    include: tripStateInclude.events.include,
+  });
+  const titles = await tx.title.findMany({ where: { tripId } });
+
+  const record: TripStateRecord = { ...trip, client, agreement, cte, events, titles };
+  return { trip: record, agreement, facts: buildTripFacts(events, titles) };
 }
 
 /**
  * Os dados do evento já registrado do tipo (null se ainda não houver), na forma que o R6 compara
- * com o reenvio: CT-e pelos seus dados, foto pelo sha256 do arquivo, demais pela data.
+ * com o reenvio: CT-e pelos seus dados, foto pelo sha256 do arquivo, cancelamento pelo motivo
+ * (gravado em `note`), demais pela data.
  */
 export function getRegisteredFingerprint(
   { trip }: TripState,
@@ -73,5 +93,7 @@ export function getRegisteredFingerprint(
     case 'UNLOADED':
     case 'PROOFS_RECEIVED':
       return { type, occurredAt: event.occurredAt };
+    case 'TRIP_CANCELLED':
+      return { type, reason: event.note ?? '' };
   }
 }

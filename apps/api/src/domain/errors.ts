@@ -1,6 +1,6 @@
 /**
  * Catálogo dos códigos de erro de negócio, nos grupos da tabela de erros do CLAUDE.md.
- * TRIP_CANCELLED e TITLE_CANCELLED cobrem o status CANCELLED, reservado para o bônus.
+ * TRIP_CANCELLED, TITLE_CANCELLED e TRIP_ALREADY_FINISHED vêm do cancelamento da viagem (R13).
  */
 export type DomainErrorCode =
   // Entrada inválida
@@ -16,6 +16,7 @@ export type DomainErrorCode =
   | 'CTE_NUMBER_IN_USE'
   | 'TRIP_CANCELLED'
   | 'TITLE_CANCELLED'
+  | 'TRIP_ALREADY_FINISHED'
   // Violação de regra
   | 'BALANCE_LOCKED'
   | 'ADVANCE_NOT_PAID'

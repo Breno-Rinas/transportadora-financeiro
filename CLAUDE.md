@@ -27,7 +27,7 @@ Fora do escopo: SEFAZ, banco/PIX/boleto/CNAB, login/perfis, multiempresa, concil
 - **Mantine 9** (difere do 7/8): `Grid` usa `gap` (não `gutter`), `Text`/`Anchor` usam `c` (não `color`), `Collapse` usa `expanded` (não `in`), raio padrão `md`. Imports de CSS já estão em `src/main.tsx`.
 - **Web:** `src/api/client.ts` expõe `api.get/post/postForm` (prefixo `/api` automático) e `ApiError` (`status`, `code`, `message`, `details`); falha de rede vira `NETWORK_ERROR` e corpo fora do formato vira `UNEXPECTED_RESPONSE`. O `QueryClient` está em `src/api/query-client.ts` (`refetchOnWindowFocus` ligado, sem retry em 4xx). As páginas de `src/pages/` são placeholders a substituir.
 - **Tipos de CT-e:** `Cte.number` e `Cte.series` são `Int` (a unicidade `(series, number)` fica correta, sem zeros à esquerda).
-- **`TripStatus.CANCELLED`** já existe no enum (reservado para o bônus; nenhuma regra o usa ainda).
+- **`TripStatus.CANCELLED`** é o estado terminal do cancelamento (R13); a migration `trip_cancellation` acrescentou `TRIP_CANCELLED` em `TripEventType` e `ADVANCE_RECOVERY` em `TitleKind`.
 - **Prisma e agentes:** o Prisma bloqueia `migrate reset` quando invocado por um agente de IA sem consentimento do usuário. `npm run db:reset` deve ser rodado pelo usuário; não contorne a trava.
 
 ## Comandos
@@ -61,15 +61,19 @@ apps/api/src/
 
 ### Notas da API (fases 3 e 4)
 
-- **application/:** um caso de uso por arquivo (`create-client`, `list-clients`, `create-driver`, `list-drivers`, `create-trip`, `list-trips`, `get-trip-detail`, `register-cte`, `attach-loading-photo`, `register-unloading`, `register-proofs`, `schedule-titles`, `settle-title`, `list-titles`, `get-dashboard`), todos recebendo um `UseCaseContext` (`prisma`, `clock`, `businessTz`, `storage`). Apoio: `trip-state` (carrega a viagem e monta `TripFacts` e o fingerprint do R6), `trip-event` (esqueleto dos eventos: transação → `lockTrip` → estado → domínio decide → grava), `trip-progress` (gera os títulos e grava cada passo de `advanceLifecycle`), `title-view` (data efetiva, travas e `bucket`) e `conflicts` (P2002 → código de domínio pelo nome do índice: `clients_cnpj_key`/`drivers_document_key` → `DOCUMENT_ALREADY_EXISTS`, `ctes_series_number_key` → `CTE_NUMBER_IN_USE`, `trip_events_tripId_type_key`/`ctes_tripId_key`/`titles_tripId_kind_key` → `EVENT_ALREADY_REGISTERED`).
+- **application/:** um caso de uso por arquivo (`create-client`, `list-clients`, `create-driver`, `list-drivers`, `create-trip`, `list-trips`, `get-trip-detail`, `register-cte`, `attach-loading-photo`, `register-unloading`, `register-proofs`, `cancel-trip`, `schedule-title`, `schedule-titles`, `settle-title`, `list-titles`, `get-dashboard`), todos recebendo um `UseCaseContext` (`prisma`, `clock`, `businessTz`, `storage`). Apoio: `trip-state` (carrega a viagem e monta `TripFacts` e o fingerprint do R6), `trip-event` (esqueleto dos eventos: transação → `lockTrip` → estado → domínio decide → grava), `trip-progress` (gera os títulos e grava cada passo de `advanceLifecycle`), `title-view` (data efetiva, travas e `bucket`) e `conflicts` (P2002 → código de domínio pelo nome do índice: `clients_cnpj_key`/`drivers_document_key` → `DOCUMENT_ALREADY_EXISTS`, `ctes_series_number_key` → `CTE_NUMBER_IN_USE`, `trip_events_tripId_type_key`/`ctes_tripId_key`/`titles_tripId_kind_key` → `EVENT_ALREADY_REGISTERED`).
+- **Uma consulta por vez dentro da transação:** a transação usa uma só conexão do pg, e um `include` com várias relações faz o Prisma buscá-las em paralelo nela (o pg 8 avisa "client.query() when the client is already executing a query"; o pg 9 vai recusar). Por isso `loadTripState` carrega a viagem e cada relação em consultas sequenciais. Dentro de `$transaction`: nada de `Promise.all` nem `include` com mais de uma relação; fora dela, tudo bem.
 - **Instantes gravados vêm do `Clock`** (`createdAt`, `recordedAt`, `changedAt`, `updatedAt`), não do `now()` do banco: testes e seed controlam o tempo.
 - **infra/:** `storage.ts` (tipo detectado pela assinatura do arquivo, não pelo mimetype declarado; nome `<uuid>.<ext>`; sha256), `trip-lock.ts` (`lockTrip`), `db-date.ts` (`LocalDate` ↔ `@db.Date` sempre por UTC) e `unique-violation.ts`. A foto só é gravada em disco quando o evento é novo e é apagada se a transação falhar.
 - **Upload inválido** (vazio ou fora de JPEG/PNG/WEBP) → 400 `VALIDATION_ERROR` com `details: [{ path: 'file' }]`; acima de 10 MB o multipart responde 413 `PAYLOAD_TOO_LARGE`.
 - **Linha do tempo:** ordenada por `at` (evento: `occurredAt`; baixa: `createdAt`; transição: `changedAt`). Em empate: evento → baixa → transição, e transições do mesmo instante na ordem do ciclo.
-- **`POST /titles/schedule` responde sempre 200** (R11); a recusa vem em `rejected` com o código do domínio (ex.: `BALANCE_LOCKED`, que nas rotas unitárias seria 422).
+- **`POST /titles/schedule` responde sempre 200** (R11); a recusa vem em `rejected` com o código do domínio (ex.: `BALANCE_LOCKED`). **`POST /titles/:id/schedule`** é a programação individual: o mesmo passo transacional (`applySchedule`, em `schedule-title.ts`) que o lote roda para cada título, mas a recusa sai como erro HTTP (422 `BALANCE_LOCKED`, 422 `ONLY_PAYABLE_CAN_BE_SCHEDULED`, 409 `TITLE_ALREADY_PAID` etc.). Sucesso: 200 com o título com `locks` (mesmo formato da baixa).
+- **`GET /titles/export.csv`:** mesmos filtros, validação e ordem de `GET /titles` (reaproveita `listTitles`); o CSV é montado em `http/titles-csv.ts`. Formato para o Excel pt-BR: BOM UTF-8, separador `;`, CRLF, valor `1234,56` (sem milhar, sem float), datas dd/mm/aaaa. Colunas: Viagem (`VG-0001`), Natureza, Espécie, Cliente/Motorista (cliente no frete do cliente; motorista no adiantamento, saldo e recuperação), Valor, Vencimento, Programado para, Status (a receber pago = "Recebido") e Motivo da trava (motivos separados por `; `). Células com `;`, aspas ou quebra de linha vão entre aspas; nome que começa com `= + - @` ganha `'` na frente (injeção de fórmula). `Content-Disposition: attachment; filename="titulos.csv"`.
+- **`POST /trips/:id/cancel`** (`cancel-trip`) usa o esqueleto `registerTripEvent`: 201 no cancelamento novo, 200 no reenvio com o mesmo motivo (R6), detalhe da viagem na resposta. O motivo fica em `TripEvent.note`.
+- **`GET /trips`:** cada item traz `clientFreightCents` (valor do CT-e ou, sem CT-e, o frete cotado; null se nenhum) e `driverFreightCents` (do acordo).
 - **Filtros:** `from`/`to` de `/trips` usam a data de negócio do `createdAt` (`startOfBusinessDay`); `dueFrom`/`dueTo` de `/titles` usam a data efetiva; `locked=true` = algum motivo de trava (mesmo critério do painel). `bucket` é null em título pago ou cancelado. `POST /trips` com cliente ou motorista inexistente → 404.
 - **E2E:** `test/acceptance.test.ts` aplica as migrations no `transportadora_test` (via `db:deploy:test`) e faz `TRUNCATE` no `beforeAll`; precisa do banco do Docker no ar.
-- **Seed:** usa os casos de uso com o relógio posicionado em cada passo do roteiro; a foto é um PNG gerado em `prisma/seed-photo.ts`. No container roda compilado (`node dist/prisma/seed.js`).
+- **Seed:** usa os casos de uso com o relógio posicionado em cada passo do roteiro; a foto é um PNG gerado em `prisma/seed-photo.ts`. No container roda compilado (`node dist/prisma/seed.js`). Para testá-lo sem mexer no banco de dev: `TRUNCATE` no `transportadora_test` e `DATABASE_URL=<url do teste> UPLOAD_DIR=<pasta temporária> npx tsx prisma/seed.ts`.
 
 ## Convenções
 
@@ -91,7 +95,9 @@ apps/api/src/
 | CT-e | `Cte` |
 | Comprovante (arquivo) | `Attachment` (`LOADING_PHOTO`, `DELIVERY_RECEIPT`) |
 | Evento operacional | `TripEvent` |
-| Título | `Title` — natureza `PAYABLE`/`RECEIVABLE`, espécie `ADVANCE`/`BALANCE`/`CLIENT_FREIGHT` |
+| Título | `Title` — natureza `PAYABLE`/`RECEIVABLE`, espécie `ADVANCE`/`BALANCE`/`CLIENT_FREIGHT`/`ADVANCE_RECOVERY` |
+| Recuperação de adiantamento | `ADVANCE_RECOVERY` (a receber do motorista, R13) |
+| Cancelar viagem | `cancel` |
 | Pagamento / baixa | `Payment` / `settle` |
 | Programar pagamento | `schedule` |
 
@@ -109,8 +115,9 @@ apps/api/src/
 - **Payment:** id, titleId, paidOn (`@db.Date`), amountCents, note?, createdAt. É uma entidade separada para suportar baixa parcial no futuro; hoje só baixa integral.
 
 Enums:
-- `TripStatus`: `CREATED`, `LOADED`, `ADVANCE_PAID`, `UNLOADED`, `PROOFS_RECEIVED`, `BALANCE_PAID` e `CANCELLED` (existe no enum, reservado para o bônus; nenhuma regra o usa ainda).
-- `TripEventType`: `CTE_ISSUED`, `LOADING_PHOTO_ATTACHED`, `UNLOADED`, `PROOFS_RECEIVED`.
+- `TripStatus`: `CREATED`, `LOADED`, `ADVANCE_PAID`, `UNLOADED`, `PROOFS_RECEIVED`, `BALANCE_PAID` e `CANCELLED` (terminal, fora da sequência; R13).
+- `TripEventType`: `CTE_ISSUED`, `LOADING_PHOTO_ATTACHED`, `UNLOADED`, `PROOFS_RECEIVED`, `TRIP_CANCELLED` (motivo em `note`).
+- `TitleKind`: `ADVANCE`, `BALANCE`, `CLIENT_FREIGHT`, `ADVANCE_RECOVERY` (`RECEIVABLE`, só nasce no cancelamento com adiantamento pago).
 
 ## Regras de negócio (todas em `domain/`, cada uma com teste unitário)
 
@@ -135,11 +142,11 @@ Programar ou pagar o saldo travado → 422 `BALANCE_LOCKED`, com a mensagem list
 **R6 — Idempotência.** `TripEvent` é único por (tripId, type), garantido por constraint no banco.
 - Reenvio do mesmo evento **com os mesmos dados** → 200 com o estado atual, sem reprocessar nada.
 - Mesmo tipo **com dados diferentes** → 409 `EVENT_ALREADY_REGISTERED`.
-- Comparação: CT-e por (number, series, issuedAt, clientFreightCents); foto pelo sha256 do arquivo; descarga e comprovantes por occurredAt.
+- Comparação: CT-e por (number, series, issuedAt, clientFreightCents); foto pelo sha256 do arquivo; descarga e comprovantes por occurredAt; cancelamento pelo motivo (sem espaços nas pontas), porque a data é opcional e, omitida, vale o momento do envio.
 - `@@unique([tripId, kind])` em Title é a segunda barreira contra duplicação.
 
 **R7 — Margem.** Calculada sempre no backend.
-- Com títulos: realizada = `CLIENT_FREIGHT − (ADVANCE + BALANCE)`, ignorando títulos cancelados.
+- Com títulos: realizada = `CLIENT_FREIGHT − (ADVANCE + BALANCE − ADVANCE_RECOVERY)`, ignorando títulos cancelados (a recuperação devolve o custo do motorista).
 - Sem títulos, mas com frete cotado: projetada = `quotedClientFreightCents − driverFreightCents`.
 - Caso contrário: `null`.
 - O percentual é `margem / frete do cliente × 100`, arredondado em 2 casas; é number só para exibição, não é dinheiro.
@@ -175,29 +182,45 @@ Por quê: o roteiro de aceite registra descarga e comprovantes **antes** da baix
 
 **Próximos passos ("o que falta").** `getPendingSteps(ctx)` no domínio devolve `{ code, message }[]`. Exemplos: "Aguardando emissão do CT-e", "Aguardando foto do carregamento", "Aguardando baixa do adiantamento", "Aguardando descarga", "Aguardando canhoto original", "Saldo liberado — programar pagamento", "Aguardando pagamento do saldo". A API devolve a lista pronta; o front só exibe.
 
+**R13 — Cancelamento da viagem (bônus).** `POST /trips/:id/cancel { reason, occurredAt? }`, numa única transação:
+- Permitido em qualquer status, exceto `BALANCE_PAID` (409 `TRIP_ALREADY_FINISHED`) e `CANCELLED`.
+- Grava o fato `TRIP_CANCELLED` com o motivo. O reenvio segue a R6.
+- Títulos `OPEN` e `SCHEDULED` viram `CANCELLED`. Títulos `PAID` ficam como estão, porque são histórico.
+- **Adiantamento já pago:** gera um título `RECEIVABLE` de espécie `ADVANCE_RECOVERY` ("Recuperação de adiantamento", a receber do motorista) com o mesmo valor e vencimento na data do cancelamento. A pendência vira "Recuperar adiantamento pago ao motorista".
+- `occurredAt` não pode estar no futuro nem ser anterior ao último fato registrado (422 `INVALID_EVENT_DATE`); sem `occurredAt`, vale o momento do envio.
+- Status → `CANCELLED`, um estado terminal fora da sequência, gravado em `TripStatusChange` com o gatilho `TRIP_CANCELLED`. Eventos posteriores → 409 `TRIP_CANCELLED`; operações nos títulos cancelados → 409 `TITLE_CANCELLED`. A recuperação pode ser baixada (`settle`), mas não programada (é a receber).
+- Na margem, os títulos cancelados são ignorados. Com adiantamento pago e recuperado, a margem fica zerada.
+- O cliente que já pagou (estorno ao cliente) fica fora do escopo e é documentado no README.
+
 ### Domínio implementado (API pública — use estas funções, não reimplemente)
 
 - `shared/money.ts`: `splitDriverFreight`, `assertPositiveCents`, `isAdvancePercent`.
 - `shared/local-date.ts`: `LocalDate`, `DateRange`, `toBusinessDate`, `addDays`, `compareLocalDate`, `isWithinRange`, `getMonthRange`, `assertValidLocalDate`, `startOfBusinessDay` (primeiro instante da data no fuso; filtros de período sobre instantes).
 - `shared/documents.ts`: `parseCnpj`, `parseDriverDocument` e `parsePlate` removem a máscara, validam e devolvem o valor a salvar (lançam `INVALID_DOCUMENT`).
-- `trip/facts.ts`: `TripFacts`, `buildTripFacts(events, titles)`, `isLoaded`, `getLoadedAt`.
-- `trip/lifecycle.ts`: `advanceLifecycle`, `INITIAL_STATUS_CHANGE`. Gatilhos gravados em `TripStatusChange.trigger`: `TRIP_CREATED`, `CTE_AND_LOADING_PHOTO_REGISTERED`, `ADVANCE_SETTLED`, `UNLOADING_REGISTERED`, `PROOFS_REGISTERED`, `BALANCE_SETTLED`.
+- `trip/facts.ts`: `TripFacts` (inclui `cancelledAt` e `advanceRecoveryStatus`), `buildTripFacts(events, titles)`, `isLoaded`, `getLoadedAt`.
+- `trip/lifecycle.ts`: `advanceLifecycle`, `INITIAL_STATUS_CHANGE`. Gatilhos gravados em `TripStatusChange.trigger`: `TRIP_CREATED`, `CTE_AND_LOADING_PHOTO_REGISTERED`, `ADVANCE_SETTLED`, `UNLOADING_REGISTERED`, `PROOFS_REGISTERED`, `BALANCE_SETTLED`, `TRIP_CANCELLED`.
+- `trip/cancellation.ts` (R13): `assertTripCanBeCancelled`, `selectTitlesToCancel`, `buildAdvanceRecovery`, `getCancellationStatusChange` e `planTripCancellation` (junta tudo, com a validação da data via `assertEventCanBeRegistered`).
+- `trip/freight.ts`: `getClientFreightCents` (CT-e ?? cotado ?? null).
 - `trip/event-rules.ts`: `decideEventRegistration` (`'NEW' | 'REPLAY'` ou 409) e `assertEventCanBeRegistered`.
 - `trip/title-generation.ts`: `shouldGenerateTitles`, `buildLoadingTitles`, `getBalanceDueDate`.
-- `trip/margin.ts`: `calculateTripMargin`.
+- `trip/margin.ts`: `calculateTripMargin` (recebe `cancelled`), `sumTitleFreights`, `percentOf`.
 - `trip/pending-steps.ts`: `getPendingSteps`.
-- `title/locks.ts`: `getTitleLocks`.
+- `title/locks.ts`: `getTitleLocks(title: { kind, status }, facts)`.
+- `title/labels.ts`: `TITLE_NATURE_LABELS`, `TITLE_KIND_LABELS`, `getTitleStatusLabel`, `getTitleCounterparty` (rótulos pt-BR das saídas geradas pela API, como o CSV).
 - `title/operations.ts`: `assertCanSchedule`, `assertCanSettle`.
 - `title/agenda.ts`: `isOpenTitle`, `getEffectiveDate`, `classifyDueDate` (`OVERDUE | TODAY | WITHIN_WEEK | LATER | NO_DATE`).
 - `dashboard/indicators.ts`: `buildDashboard`, `resolveDashboardPeriod`.
 
 ### Decisões do domínio
 
-- **Códigos de erro:** existem também `TRIP_CANCELLED` e `TITLE_CANCELLED` (409). Invariantes de entrada repetidas no domínio (valor ≤ 0, percentual diferente de 50/70, prazo negativo) usam `VALIDATION_ERROR` (400). A union `DomainErrorCode` fica em `errors.ts`, e o error handler mapeia com `Record<DomainErrorCode, number>`.
+- **Códigos de erro:** existem também `TRIP_CANCELLED`, `TITLE_CANCELLED` e `TRIP_ALREADY_FINISHED` (409). Invariantes de entrada repetidas no domínio (valor ≤ 0, percentual diferente de 50/70, prazo negativo) usam `VALIDATION_ERROR` (400). A union `DomainErrorCode` fica em `errors.ts`, e o error handler mapeia com `Record<DomainErrorCode, number>`.
 - **CNPJ alfanumérico:** aceito conforme a IN RFB 2.229/2024, além do só numérico. O `maskCnpj` do front precisa aceitar letras.
 - **Ordem das checagens na baixa:** natureza → status → travas → valor → data. Se a única trava do saldo for o adiantamento não pago, o erro é `ADVANCE_NOT_PAID`; se houver também trava de descarga ou canhoto, o erro é `BALANCE_LOCKED`, listando todos os motivos.
 - **Percentual da margem:** é `null` quando o frete do cliente é zero. No painel, o percentual é ponderado (margem total ÷ frete total), e o período considera a data de negócio da emissão do CT-e.
-- **Pendências:** "Saldo liberado" depende do `canSchedule` das travas e pode aparecer junto com "Aguardando baixa do adiantamento".
+- **Pendências:** "Saldo liberado" depende do `canSchedule` das travas e pode aparecer junto com "Aguardando baixa do adiantamento". Na viagem cancelada, as pendências do fluxo somem: só fica `ADVANCE_RECOVERY_PENDING` enquanto a recuperação estiver em aberto (lista vazia depois de baixada ou sem recuperação).
+- **Travas do título cancelado:** `getTitleLocks` devolve `{ canSchedule: false, canSettle: false, reasons: [] }`. Cancelado é terminal (nada permitido), e as travas do saldo deixam de fazer sentido (a viagem não vai mais descarregar), então não há motivo a exibir nem o título conta em `locked=true`. Título pago continua como antes. A recuperação não tem travas.
+- **Margem da viagem cancelada:** sempre `REALIZED`, nunca projetada (o frete cotado não vai acontecer). Sem nada pago, ou com o adiantamento pago e recuperado, dá `amountCents: 0` e `percent: null` (frete do cliente zero). O cliente que já pagou continua contando (estorno fora do escopo). No painel, a recuperação em aberto entra em `receivableOpen` (é `RECEIVABLE`).
+- **Viagem cancelada não gera títulos** (`shouldGenerateTitles`), embora nenhum evento novo seja aceito depois do cancelamento.
 
 ## Painel — `GET /api/dashboard?from&to`
 
@@ -218,15 +241,18 @@ Tudo em uma chamada. "Hoje" no fuso de negócio; o período padrão é o mês co
 |---|---|---|
 | GET/POST | `/clients` | Listar (`?q`) / criar |
 | GET/POST | `/drivers` | Listar (`?q`) / criar |
-| GET | `/trips` | Filtros: `?status&clientId&driverId&from&to&q`. O período usa `createdAt`; `q` busca em código, origem, destino, produto, cliente, motorista e placa. Cada item traz `pendingSteps` e `margin`. |
+| GET | `/trips` | Filtros: `?status&clientId&driverId&from&to&q`. O período usa `createdAt`; `q` busca em código, origem, destino, produto, cliente, motorista e placa. Cada item traz `clientFreightCents` (CT-e ?? cotado ?? null), `driverFreightCents`, `pendingSteps` e `margin`. |
 | POST | `/trips` | Body: `{ clientId, driverId, origin, destination, product, weightKg, quotedClientFreightCents?, driverFreightCents, advancePercent }` |
 | GET | `/trips/:id` | Detalhe: trip, client, driver, agreement, cte, attachments, `timeline` (eventos + transições + pagamentos em ordem cronológica), titles (cada um com `locks`), margin, pendingSteps |
 | POST | `/trips/:id/cte` | Body: `{ number, series, issuedAt, clientFreightCents }` |
 | POST | `/trips/:id/loading-photo` | Multipart: `file` (jpeg/png/webp, ≤ 10 MB) e `occurredAt` opcional |
 | POST | `/trips/:id/unloading` | Body: `{ occurredAt }` |
 | POST | `/trips/:id/proofs` | Body: `{ occurredAt, note? }` |
+| POST | `/trips/:id/cancel` | Body: `{ reason, occurredAt? }` (R13). 201 novo / 200 reenvio com o mesmo motivo; 409 `TRIP_ALREADY_FINISHED`, `EVENT_ALREADY_REGISTERED` |
 | GET | `/titles` | Filtros: `?nature&kind&status&dueFrom&dueTo&locked&tripId`. Ordenado por data efetiva ascendente (nulos por último); cada item traz a viagem resumida e os `locks` |
+| GET | `/titles/export.csv` | Mesmos filtros e ordem de `/titles`, em CSV para o Excel pt-BR (ver Notas da API) |
 | POST | `/titles/schedule` | Body: `{ titleIds, date }` (ver R11) |
+| POST | `/titles/:id/schedule` | Body: `{ date }`. 200 com o título e `locks`, ou o erro de domínio (422 `BALANCE_LOCKED` etc.) |
 | POST | `/titles/:id/settle` | Body: `{ paidOn, amountCents, note? }` |
 | GET | `/dashboard` | Indicadores do painel |
 | GET | `/uploads/*` | Arquivos enviados |
@@ -239,7 +265,7 @@ Rotas de evento devolvem o detalhe atualizado da viagem (mesmo formato do `GET /
 |---|---|
 | 400 `VALIDATION_ERROR` | Entrada inválida no Zod; `details` traz os campos com problema |
 | 404 `NOT_FOUND` | Recurso inexistente |
-| 409 | Conflito de estado ou duplicidade: `EVENT_ALREADY_REGISTERED`, `TRIP_NOT_LOADED`, `UNLOADING_NOT_REGISTERED`, `TITLE_ALREADY_PAID`, `DOCUMENT_ALREADY_EXISTS`, `CTE_NUMBER_IN_USE` |
+| 409 | Conflito de estado ou duplicidade: `EVENT_ALREADY_REGISTERED`, `TRIP_NOT_LOADED`, `UNLOADING_NOT_REGISTERED`, `TITLE_ALREADY_PAID`, `DOCUMENT_ALREADY_EXISTS`, `CTE_NUMBER_IN_USE`, `TRIP_CANCELLED`, `TITLE_CANCELLED`, `TRIP_ALREADY_FINISHED` |
 | 422 | Violação de regra: `BALANCE_LOCKED`, `ADVANCE_NOT_PAID`, `PARTIAL_PAYMENT_NOT_SUPPORTED`, `INVALID_EVENT_DATE`, `INVALID_DATE`, `ONLY_PAYABLE_CAN_BE_SCHEDULED`, `INVALID_DOCUMENT` |
 | 500 | Só bug, sem vazar stack |
 
@@ -333,7 +359,7 @@ O módulo tem que parecer uma tela nativa do sistema FretouBR. A referência é 
 
 ## Seed (`apps/api/prisma/seed.ts`)
 
-Usa os casos de uso, não insere direto no banco, para garantir consistência. As datas são relativas a hoje. Só popula se o banco estiver vazio. Cadastra 3 a 4 clientes e 5 a 6 motoristas com CPF/CNPJ válidos, e pelo menos estas 12 viagens:
+Usa os casos de uso, não insere direto no banco, para garantir consistência. As datas são relativas a hoje. Só popula se o banco estiver vazio. Cadastra 3 a 4 clientes e 5 a 6 motoristas com CPF/CNPJ válidos, e estas 13 viagens:
 
 1. Criada, sem eventos.
 2. Só CT-e, sem foto.
@@ -347,21 +373,23 @@ Usa os casos de uso, não insere direto no banco, para garantir consistência. A
 10. Saldo programado para hoje.
 11. Finalizada, com o a receber em aberto.
 12. Margem negativa (frete do motorista maior que o do cliente).
+13. Cancelada com o adiantamento pago (recuperação a receber do motorista; R13).
 
 ## Testes
 
-- **Unitários (Vitest)** do domínio: divisão do frete, ciclo de vida, travas, próximos passos, margem, comparação de idempotência, documentos e datas.
+- **Unitários (Vitest)** do domínio: divisão do frete, ciclo de vida, travas, próximos passos, margem, comparação de idempotência, documentos, datas e cancelamento (R13). Na API, também o serializador do CSV (`http/titles-csv.test.ts`).
 - **E2E da API** em `apps/api/test/acceptance.test.ts`: usa `app.inject` contra o banco `transportadora_test` e percorre os critérios de aceite em sequência.
   1. Viagem com frete do cliente R$ 5.000,00 e frete do motorista R$ 3.333,33 a 70%.
   2. CT-e sem foto não gera títulos.
   3. Foto gera adiantamento de 2.333,33 e saldo de 1.000,00.
   4. O a receber vence conforme o prazo do cliente.
-  5. Programar o saldo antes da descarga dá 422.
+  5. Programar o saldo antes da descarga dá 422 (`POST /titles/:id/schedule`); no lote, a recusa vem em `rejected`.
   6. Descarga sem comprovante mantém o saldo travado.
   7. Comprovante libera o saldo.
   8. Baixa do adiantamento e depois do saldo leva a `BALANCE_PAID`.
   9. Reenviar o CT-e não duplica títulos.
   10. Margem negativa aparece sinalizada.
+  - Bônus: exportação CSV; cancelamento com o adiantamento em aberto (tudo cancelado, sem recuperação) e com o adiantamento pago (recuperação criada, margem zerada, eventos posteriores → 409).
 - **Front:** só `format.ts`.
 
 ## Definição de pronto (toda tarefa)

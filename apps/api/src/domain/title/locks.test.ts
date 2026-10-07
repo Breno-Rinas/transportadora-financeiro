@@ -9,20 +9,30 @@ const LOADED: TripFacts = {
   proofsReceivedAt: null,
   advanceStatus: 'OPEN',
   balanceStatus: 'OPEN',
+  cancelledAt: null,
+  advanceRecoveryStatus: null,
 };
 const UNLOADED: TripFacts = { ...LOADED, unloadedAt: new Date('2026-03-12T10:00:00Z') };
 const PROOFS_RECEIVED: TripFacts = {
   ...UNLOADED,
   proofsReceivedAt: new Date('2026-03-14T10:00:00Z'),
 };
+/** Cancelada antes da descarga, com o adiantamento pago (R13). */
+const CANCELLED: TripFacts = {
+  ...LOADED,
+  advanceStatus: 'PAID',
+  balanceStatus: 'CANCELLED',
+  cancelledAt: new Date('2026-03-11T10:00:00Z'),
+  advanceRecoveryStatus: 'OPEN',
+};
 
-const BALANCE = { kind: 'BALANCE' } as const;
+const BALANCE = { kind: 'BALANCE', status: 'OPEN' } as const;
+const UNLOCKED = { canSchedule: true, canSettle: true, reasons: [] };
 
 describe('getTitleLocks (R4/R5)', () => {
   it('adiantamento e frete do cliente não têm travas', () => {
-    const unlocked = { canSchedule: true, canSettle: true, reasons: [] };
-    expect(getTitleLocks({ kind: 'ADVANCE' }, LOADED)).toEqual(unlocked);
-    expect(getTitleLocks({ kind: 'CLIENT_FREIGHT' }, LOADED)).toEqual(unlocked);
+    expect(getTitleLocks({ kind: 'ADVANCE', status: 'OPEN' }, LOADED)).toEqual(UNLOCKED);
+    expect(getTitleLocks({ kind: 'CLIENT_FREIGHT', status: 'OPEN' }, LOADED)).toEqual(UNLOCKED);
   });
 
   it('saldo antes da descarga: três motivos, nada permitido', () => {
@@ -57,10 +67,22 @@ describe('getTitleLocks (R4/R5)', () => {
   });
 
   it('com comprovante e adiantamento pago, o saldo está liberado', () => {
-    expect(getTitleLocks(BALANCE, { ...PROOFS_RECEIVED, advanceStatus: 'PAID' })).toEqual({
-      canSchedule: true,
-      canSettle: true,
-      reasons: [],
-    });
+    expect(getTitleLocks(BALANCE, { ...PROOFS_RECEIVED, advanceStatus: 'PAID' })).toEqual(UNLOCKED);
+  });
+});
+
+describe('getTitleLocks na viagem cancelada (R13)', () => {
+  it('título cancelado: nada permitido e nenhum motivo de trava a exibir', () => {
+    const cancelled = { canSchedule: false, canSettle: false, reasons: [] };
+    expect(getTitleLocks({ kind: 'BALANCE', status: 'CANCELLED' }, CANCELLED)).toEqual(cancelled);
+    expect(getTitleLocks({ kind: 'CLIENT_FREIGHT', status: 'CANCELLED' }, CANCELLED)).toEqual(
+      cancelled,
+    );
+  });
+
+  it('a recuperação do adiantamento não tem travas', () => {
+    expect(getTitleLocks({ kind: 'ADVANCE_RECOVERY', status: 'OPEN' }, CANCELLED)).toEqual(
+      UNLOCKED,
+    );
   });
 });

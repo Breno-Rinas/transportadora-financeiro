@@ -90,6 +90,11 @@ export const registerUnloadingSchema = z.object({ occurredAt: instant });
 
 export const registerProofsSchema = z.object({ occurredAt: instant, note: optionalNote });
 
+export const cancelTripSchema = z.object({
+  reason: z.string().trim().min(1).max(1000),
+  occurredAt: instant.optional(),
+});
+
 export const listTitlesQuerySchema = z.object({
   nature: titleNature.optional(),
   kind: titleKind.optional(),
@@ -102,6 +107,8 @@ export const listTitlesQuerySchema = z.object({
     .transform((value) => (value === undefined ? undefined : value === 'true')),
   tripId: z.uuid().optional(),
 });
+
+export const scheduleTitleSchema = z.object({ date: localDate });
 
 export const scheduleTitlesSchema = z.object({
   titleIds: z.array(z.uuid()).min(1).max(500),

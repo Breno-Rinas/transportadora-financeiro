@@ -9,6 +9,8 @@ const NOTHING_REGISTERED: TripFacts = {
   proofsReceivedAt: null,
   advanceStatus: null,
   balanceStatus: null,
+  cancelledAt: null,
+  advanceRecoveryStatus: null,
 };
 const LOADED: TripFacts = {
   ...NOTHING_REGISTERED,
@@ -63,6 +65,37 @@ describe('getPendingSteps', () => {
     expect(getPendingSteps(scheduled)).toEqual([
       { code: 'BALANCE_PAYMENT_PENDING', message: 'Aguardando pagamento do saldo' },
     ]);
+  });
+
+  it('viagem cancelada com adiantamento pago: recuperar o adiantamento (R13)', () => {
+    const cancelled: TripFacts = {
+      ...UNLOADED,
+      advanceStatus: 'PAID',
+      balanceStatus: 'CANCELLED',
+      cancelledAt: new Date('2026-03-13T10:00:00Z'),
+      advanceRecoveryStatus: 'OPEN',
+    };
+    expect(getPendingSteps(cancelled)).toEqual([
+      {
+        code: 'ADVANCE_RECOVERY_PENDING',
+        message: 'Recuperar adiantamento pago ao motorista',
+      },
+    ]);
+    expect(getPendingSteps({ ...cancelled, advanceRecoveryStatus: 'PAID' })).toEqual([]);
+  });
+
+  it('viagem cancelada sem nada pago não tem pendências, nem as do fluxo (R13)', () => {
+    expect(
+      codesOf({ ...NOTHING_REGISTERED, cancelledAt: new Date('2026-03-10T10:00:00Z') }),
+    ).toEqual([]);
+    expect(
+      codesOf({
+        ...LOADED,
+        advanceStatus: 'CANCELLED',
+        balanceStatus: 'CANCELLED',
+        cancelledAt: new Date('2026-03-11T10:00:00Z'),
+      }),
+    ).toEqual([]);
   });
 
   it('viagem finalizada não tem pendências', () => {

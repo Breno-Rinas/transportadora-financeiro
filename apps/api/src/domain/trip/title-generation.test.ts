@@ -18,6 +18,8 @@ const NOTHING_REGISTERED: TripFacts = {
   proofsReceivedAt: null,
   advanceStatus: null,
   balanceStatus: null,
+  cancelledAt: null,
+  advanceRecoveryStatus: null,
 };
 
 // CT-e emitido às 22h de 11/03 em São Paulo (já 12/03 em UTC); foto às 09h de 12/03.
@@ -53,6 +55,16 @@ describe('shouldGenerateTitles (R1)', () => {
       balanceStatus: 'OPEN',
     };
     expect(shouldGenerateTitles(withTitles)).toBe(false);
+  });
+
+  it('viagem cancelada não gera títulos (R13)', () => {
+    const cancelled: TripFacts = {
+      ...NOTHING_REGISTERED,
+      cteIssuedAt: CTE_AT,
+      loadingPhotoAt: PHOTO_AT,
+      cancelledAt: PHOTO_AT,
+    };
+    expect(shouldGenerateTitles(cancelled)).toBe(false);
   });
 });
 

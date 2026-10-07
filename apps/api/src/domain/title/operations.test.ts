@@ -13,6 +13,8 @@ const LOADED: TripFacts = {
   proofsReceivedAt: null,
   advanceStatus: 'OPEN',
   balanceStatus: 'OPEN',
+  cancelledAt: null,
+  advanceRecoveryStatus: null,
 };
 const PROOFS_RECEIVED: TripFacts = {
   ...LOADED,
@@ -39,6 +41,20 @@ const CLIENT_FREIGHT: OperableTitle = {
   status: 'OPEN',
   amountCents: 500000,
 };
+/** Adiantamento pago de viagem cancelada, a receber do motorista (R13). */
+const ADVANCE_RECOVERY: OperableTitle = {
+  nature: 'RECEIVABLE',
+  kind: 'ADVANCE_RECOVERY',
+  status: 'OPEN',
+  amountCents: 233333,
+};
+const CANCELLED_TRIP: TripFacts = {
+  ...LOADED,
+  advanceStatus: 'PAID',
+  balanceStatus: 'CANCELLED',
+  cancelledAt: new Date('2026-03-15T10:00:00Z'),
+  advanceRecoveryStatus: 'OPEN',
+};
 
 describe('assertCanSchedule (R10)', () => {
   const schedule =
@@ -53,6 +69,15 @@ describe('assertCanSchedule (R10)', () => {
 
   it('só títulos a pagar podem ser programados', () => {
     expect(schedule(CLIENT_FREIGHT, LOADED)).toThrow(withCode('ONLY_PAYABLE_CAN_BE_SCHEDULED'));
+    expect(schedule(ADVANCE_RECOVERY, CANCELLED_TRIP)).toThrow(
+      withCode('ONLY_PAYABLE_CAN_BE_SCHEDULED'),
+    );
+  });
+
+  it('saldo cancelado com a viagem dá TITLE_CANCELLED, não a trava do saldo', () => {
+    expect(schedule({ ...BALANCE, status: 'CANCELLED' }, CANCELLED_TRIP)).toThrow(
+      withCode('TITLE_CANCELLED'),
+    );
   });
 
   it('título pago ou cancelado não pode ser programado', () => {
@@ -100,6 +125,16 @@ describe('assertCanSettle (R10/R5)', () => {
 
   it('título já pago dá TITLE_ALREADY_PAID', () => {
     expect(settle({ ...ADVANCE, status: 'PAID' }, LOADED)).toThrow(withCode('TITLE_ALREADY_PAID'));
+  });
+
+  it('título cancelado dá TITLE_CANCELLED', () => {
+    expect(settle({ ...BALANCE, status: 'CANCELLED' }, CANCELLED_TRIP)).toThrow(
+      withCode('TITLE_CANCELLED'),
+    );
+  });
+
+  it('a recuperação do adiantamento da viagem cancelada pode ser baixada (R13)', () => {
+    expect(settle(ADVANCE_RECOVERY, CANCELLED_TRIP)).not.toThrow();
   });
 
   it('valor diferente do título dá PARTIAL_PAYMENT_NOT_SUPPORTED', () => {

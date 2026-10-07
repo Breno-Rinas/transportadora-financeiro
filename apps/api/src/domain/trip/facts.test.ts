@@ -25,6 +25,31 @@ describe('buildTripFacts', () => {
       proofsReceivedAt: null,
       advanceStatus: 'PAID',
       balanceStatus: 'OPEN',
+      cancelledAt: null,
+      advanceRecoveryStatus: null,
+    });
+  });
+
+  it('lê o cancelamento e a recuperação do adiantamento (R13)', () => {
+    const cancelledAt = new Date('2026-03-11T10:00:00Z');
+    const facts = buildTripFacts(
+      [
+        { type: 'CTE_ISSUED', occurredAt: cteAt },
+        { type: 'LOADING_PHOTO_ATTACHED', occurredAt: photoAt },
+        { type: 'TRIP_CANCELLED', occurredAt: cancelledAt },
+      ],
+      [
+        { kind: 'ADVANCE', status: 'PAID' },
+        { kind: 'BALANCE', status: 'CANCELLED' },
+        { kind: 'ADVANCE_RECOVERY', status: 'OPEN' },
+      ],
+    );
+
+    expect(facts).toMatchObject({
+      cancelledAt,
+      advanceStatus: 'PAID',
+      balanceStatus: 'CANCELLED',
+      advanceRecoveryStatus: 'OPEN',
     });
   });
 });

@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { attachLoadingPhoto } from '../../application/attach-loading-photo.js';
+import { cancelTrip } from '../../application/cancel-trip.js';
 import type { UseCaseContext } from '../../application/context.js';
 import { createTrip } from '../../application/create-trip.js';
 import { getTripDetail } from '../../application/get-trip-detail.js';
@@ -10,6 +11,7 @@ import { registerUnloading } from '../../application/register-unloading.js';
 import type { TripEventResult } from '../../application/trip-event.js';
 import { DomainError } from '../../domain/errors.js';
 import {
+  cancelTripSchema,
   createTripSchema,
   idParamsSchema,
   listTripsQuerySchema,
@@ -91,5 +93,11 @@ export function tripRoutes(app: FastifyInstance, context: UseCaseContext): void 
     const { id } = idParamsSchema.parse(request.params);
     const input = registerProofsSchema.parse(request.body);
     return sendEventResult(reply, await registerProofs(context, id, input));
+  });
+
+  app.post('/trips/:id/cancel', async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const input = cancelTripSchema.parse(request.body);
+    return sendEventResult(reply, await cancelTrip(context, id, input));
   });
 }

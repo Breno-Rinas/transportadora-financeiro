@@ -23,10 +23,11 @@ export interface LoadingTitlesInput {
 
 /**
  * R1 — Os títulos nascem quando a viagem tem CT-e e foto do carregamento, em qualquer ordem,
- * e ainda não foram gerados. Os três nascem juntos, então basta olhar o adiantamento.
+ * e ainda não foram gerados. Os três nascem juntos, então basta olhar o adiantamento. Viagem
+ * cancelada (R13) não gera títulos.
  */
 export function shouldGenerateTitles(facts: TripFacts): boolean {
-  return isLoaded(facts) && facts.advanceStatus === null;
+  return facts.cancelledAt === null && isLoaded(facts) && facts.advanceStatus === null;
 }
 
 /**

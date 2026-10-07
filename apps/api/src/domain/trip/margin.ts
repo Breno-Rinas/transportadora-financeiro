@@ -20,6 +20,8 @@ export interface TripMarginInput {
   titles: readonly MarginTitle[];
   quotedClientFreightCents: number | null;
   driverFreightCents: number;
+  /** Viagem cancelada (R13): a margem nunca é projetada. */
+  cancelled: boolean;
 }
 
 export interface FreightTotals {
@@ -27,13 +29,26 @@ export interface FreightTotals {
   driverFreightCents: number;
 }
 
-/** Soma dos títulos por lado (cliente x motorista), ignorando os cancelados. */
+/**
+ * Soma dos títulos por lado (cliente x motorista), ignorando os cancelados. A recuperação do
+ * adiantamento (R13) devolve ao caixa o que foi pago ao motorista, então abate o custo dele.
+ */
 export function sumTitleFreights(titles: readonly MarginTitle[]): FreightTotals {
   const totals: FreightTotals = { clientFreightCents: 0, driverFreightCents: 0 };
   for (const title of titles) {
     if (title.status === 'CANCELLED') continue;
-    if (title.kind === 'CLIENT_FREIGHT') totals.clientFreightCents += title.amountCents;
-    else totals.driverFreightCents += title.amountCents;
+    switch (title.kind) {
+      case 'CLIENT_FREIGHT':
+        totals.clientFreightCents += title.amountCents;
+        break;
+      case 'ADVANCE':
+      case 'BALANCE':
+        totals.driverFreightCents += title.amountCents;
+        break;
+      case 'ADVANCE_RECOVERY':
+        totals.driverFreightCents -= title.amountCents;
+        break;
+    }
   }
   return totals;
 }
@@ -62,12 +77,15 @@ function buildMargin(kind: MarginKind, totals: FreightTotals): Margin {
 
 /**
  * R7 — Margem da viagem, sempre calculada no backend.
- * Com títulos: realizada = CLIENT_FREIGHT − (ADVANCE + BALANCE), ignorando cancelados.
+ * Com títulos: realizada = CLIENT_FREIGHT − (ADVANCE + BALANCE − ADVANCE_RECOVERY), ignorando
+ * cancelados.
  * Sem títulos, com frete cotado: projetada = frete cotado − frete do motorista.
  * Caso contrário: null.
+ * Viagem cancelada (R13): sempre a realizada, porque o frete cotado não vai mais acontecer. Sem
+ * nada pago, ou com o adiantamento pago e recuperado, ela fica zerada.
  */
 export function calculateTripMargin(input: TripMarginInput): Margin | null {
-  if (input.titles.length > 0) {
+  if (input.titles.length > 0 || input.cancelled) {
     return buildMargin('REALIZED', sumTitleFreights(input.titles));
   }
   if (input.quotedClientFreightCents !== null) {

@@ -59,6 +59,8 @@ export function serializeTripListItem(item: TripListItem): TripListItemDto {
     client: { id: item.client.id, legalName: item.client.legalName },
     driver: { id: item.driver.id, name: item.driver.name, vehiclePlate: item.driver.vehiclePlate },
     createdAt: iso(item.createdAt),
+    clientFreightCents: item.clientFreightCents,
+    driverFreightCents: item.driverFreightCents,
     pendingSteps: item.pendingSteps,
     margin: item.margin,
   };

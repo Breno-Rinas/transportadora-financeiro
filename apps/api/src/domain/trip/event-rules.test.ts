@@ -22,6 +22,8 @@ const NOTHING_REGISTERED: TripFacts = {
   proofsReceivedAt: null,
   advanceStatus: null,
   balanceStatus: null,
+  cancelledAt: null,
+  advanceRecoveryStatus: null,
 };
 const LOADED: TripFacts = {
   ...NOTHING_REGISTERED,
@@ -79,6 +81,17 @@ describe('decideEventRegistration (R6)', () => {
       withCode('EVENT_ALREADY_REGISTERED'),
     );
   });
+
+  it('cancelamento é comparado pelo motivo, sem diferença por espaços nas pontas (R13)', () => {
+    const cancelled: EventFingerprint = { type: 'TRIP_CANCELLED', reason: 'Cliente desistiu' };
+
+    expect(decideEventRegistration(cancelled, { ...cancelled, reason: ' Cliente desistiu ' })).toBe(
+      'REPLAY',
+    );
+    expect(() =>
+      decideEventRegistration(cancelled, { ...cancelled, reason: 'Caminhão quebrou' }),
+    ).toThrow(withCode('EVENT_ALREADY_REGISTERED'));
+  });
 });
 
 describe('assertEventCanBeRegistered (R9)', () => {
@@ -123,6 +136,20 @@ describe('assertEventCanBeRegistered (R9)', () => {
       withCode('INVALID_EVENT_DATE'),
     );
     expect(register('PROOFS_RECEIVED', UNLOADED_AT, UNLOADED)).not.toThrow();
+  });
+
+  it('cancelamento não exige fato anterior, mas não pode vir antes do último registrado', () => {
+    expect(register('TRIP_CANCELLED', CTE_AT, NOTHING_REGISTERED)).not.toThrow();
+    expect(register('TRIP_CANCELLED', UNLOADED_AT, UNLOADED)).not.toThrow();
+    expect(register('TRIP_CANCELLED', new Date(UNLOADED_AT.getTime() - 1), UNLOADED)).toThrow(
+      expect.objectContaining({
+        code: 'INVALID_EVENT_DATE',
+        message: 'O cancelamento não pode ser anterior ao último fato registrado da viagem.',
+      }),
+    );
+    expect(register('TRIP_CANCELLED', new Date(NOW.getTime() + 1), LOADED)).toThrow(
+      withCode('INVALID_EVENT_DATE'),
+    );
   });
 
   it('viagem cancelada não aceita eventos', () => {

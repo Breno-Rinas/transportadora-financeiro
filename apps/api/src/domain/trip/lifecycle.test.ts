@@ -9,6 +9,8 @@ const NOTHING_REGISTERED: TripFacts = {
   proofsReceivedAt: null,
   advanceStatus: null,
   balanceStatus: null,
+  cancelledAt: null,
+  advanceRecoveryStatus: null,
 };
 
 const LOADED: TripFacts = {

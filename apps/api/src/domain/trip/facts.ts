@@ -3,8 +3,8 @@ import type { TripEventType } from './types.js';
 
 /**
  * O que já aconteceu na viagem, na forma que as regras consultam. É a entrada comum do ciclo de
- * vida (R8), das pré-condições dos eventos (R9), da geração de títulos (R1), das travas (R4/R5)
- * e dos próximos passos. Null significa que o fato ainda não foi registrado.
+ * vida (R8), das pré-condições dos eventos (R9), da geração de títulos (R1), das travas (R4/R5),
+ * dos próximos passos e do cancelamento (R13). Null significa que o fato ainda não foi registrado.
  */
 export interface TripFacts {
   /** `occurredAt` do evento CTE_ISSUED, que é a emissão do CT-e (`cte.issuedAt`). */
@@ -15,6 +15,10 @@ export interface TripFacts {
   /** Status dos títulos do motorista; null enquanto os títulos não foram gerados. */
   advanceStatus: TitleStatus | null;
   balanceStatus: TitleStatus | null;
+  /** `occurredAt` do cancelamento (R13); null se a viagem não foi cancelada. */
+  cancelledAt: Date | null;
+  /** Status da recuperação do adiantamento; null se ela não existe (R13). */
+  advanceRecoveryStatus: TitleStatus | null;
 }
 
 export interface RecordedEvent {
@@ -44,6 +48,8 @@ export function buildTripFacts(
     proofsReceivedAt: occurredAt('PROOFS_RECEIVED'),
     advanceStatus: statusOf('ADVANCE'),
     balanceStatus: statusOf('BALANCE'),
+    cancelledAt: occurredAt('TRIP_CANCELLED'),
+    advanceRecoveryStatus: statusOf('ADVANCE_RECOVERY'),
   };
 }
 

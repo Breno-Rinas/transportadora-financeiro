@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import { attachLoadingPhoto } from '../src/application/attach-loading-photo.js';
+import { cancelTrip } from '../src/application/cancel-trip.js';
 import type { UseCaseContext } from '../src/application/context.js';
 import { createClient } from '../src/application/create-client.js';
 import { createDriver } from '../src/application/create-driver.js';
@@ -103,8 +104,9 @@ type Step =
   | { at: Date; kind: 'photo' }
   | { at: Date; kind: 'unloading' }
   | { at: Date; kind: 'proofs' }
-  | { at: Date; kind: 'settle'; title: Exclude<TitleKind, 'CLIENT_FREIGHT'> }
-  | { at: Date; kind: 'scheduleForToday'; title: 'BALANCE' };
+  | { at: Date; kind: 'settle'; title: 'ADVANCE' | 'BALANCE' }
+  | { at: Date; kind: 'scheduleForToday'; title: 'BALANCE' }
+  | { at: Date; kind: 'cancel'; reason: string };
 
 interface TripScript {
   /** O que a viagem demonstra (CLAUDE.md, lista do seed). */
@@ -348,6 +350,26 @@ const TRIPS: TripScript[] = [
     ],
     photoColor: [224, 49, 49],
   },
+  {
+    label: 'Cancelada com o adiantamento pago (recuperação a receber do motorista)',
+    client: 1,
+    driver: 2,
+    origin: 'Guarapuava/PR',
+    destination: 'Ponta Grossa/PR',
+    product: 'Cevada',
+    weightKg: 31000,
+    quotedClientFreightCents: 420000,
+    driverFreightCents: 290000,
+    advancePercent: 70,
+    createdAt: at(-5, 9),
+    steps: [
+      { at: at(-4, 8), kind: 'cte', number: 4111, clientFreightCents: 420000 },
+      { at: at(-4, 9), kind: 'photo' },
+      { at: at(-4, 15), kind: 'settle', title: 'ADVANCE' },
+      { at: at(-2, 16), kind: 'cancel', reason: 'Carga recusada pelo destinatário na portaria.' },
+    ],
+    photoColor: [134, 142, 150],
+  },
 ];
 
 async function findTitle(
@@ -405,6 +427,9 @@ async function runStep(tripId: string, step: Step, script: TripScript): Promise<
       }
       return;
     }
+    case 'cancel':
+      await cancelTrip(context, tripId, { reason: step.reason, occurredAt: step.at });
+      return;
   }
 }
 

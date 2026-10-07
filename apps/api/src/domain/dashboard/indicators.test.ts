@@ -21,6 +21,8 @@ const LOADED: TripFacts = {
   proofsReceivedAt: null,
   advanceStatus: 'OPEN',
   balanceStatus: 'OPEN',
+  cancelledAt: null,
+  advanceRecoveryStatus: null,
 };
 const PROOFS_RECEIVED: TripFacts = {
   ...LOADED,

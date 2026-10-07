@@ -8,7 +8,8 @@ export type LifecycleTrigger =
   | 'ADVANCE_SETTLED'
   | 'UNLOADING_REGISTERED'
   | 'PROOFS_REGISTERED'
-  | 'BALANCE_SETTLED';
+  | 'BALANCE_SETTLED'
+  | 'TRIP_CANCELLED';
 
 export interface StatusChange {
   from: TripStatus;
@@ -72,7 +73,7 @@ const LIFECYCLE_STEPS: readonly LifecycleStep[] = [
  * satisfeita. Os fatos são aceitos quando acontecem (descarga e comprovantes podem chegar antes
  * da baixa do adiantamento); quando a etapa pendente se resolve, o status percorre as seguintes
  * em sequência, uma transição por vez, sem nunca pular etapas. BALANCE_PAID e CANCELLED não têm
- * próxima seta.
+ * próxima seta; o cancelamento (R13) é uma transição à parte, em `cancellation.ts`.
  */
 export function advanceLifecycle(status: TripStatus, facts: TripFacts): LifecycleResult {
   const changes: StatusChange[] = [];

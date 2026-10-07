@@ -2,7 +2,7 @@ import { addDays, compareLocalDate, type LocalDate } from '../shared/local-date.
 import type { TitleStatus } from './types.js';
 
 /** Em aberto = ainda a pagar ou a receber, programado ou não. */
-export function isOpenTitle(status: TitleStatus | null): boolean {
+export function isOpenTitle(status: TitleStatus | null): status is 'OPEN' | 'SCHEDULED' {
   return status === 'OPEN' || status === 'SCHEDULED';
 }
 

@@ -210,6 +210,14 @@ describe('critérios de aceite', () => {
         at: '2026-03-20T10:00:00.000Z',
       }),
     ]);
+
+    // Sem CT-e, a lista mostra o frete cotado.
+    const [item] = (await get('/api/trips')).json<TripListItemDto[]>();
+    expect(item).toMatchObject({
+      id: tripId,
+      clientFreightCents: 500000,
+      driverFreightCents: 333333,
+    });
   });
 
   it('descarga antes do carregamento dá 409 TRIP_NOT_LOADED', async () => {
@@ -318,6 +326,20 @@ describe('critérios de aceite', () => {
   });
 
   it('5. programar o saldo antes da descarga é recusado (BALANCE_LOCKED, 422); o lote segue', async () => {
+    const single = await post(`/api/titles/${balanceId}/schedule`, { date: '2026-03-25' });
+    expect(single.statusCode).toBe(422);
+    expect(single.json()).toEqual({
+      error: {
+        code: 'BALANCE_LOCKED',
+        message: expect.stringContaining('Aguardando registro da descarga'),
+        details: {
+          reasons: expect.arrayContaining([expect.objectContaining({ code: 'NOT_UNLOADED' })]),
+        },
+      },
+    });
+    const untouched = (await get(`/api/trips/${tripId}`)).json<TripDetailDto>();
+    expect(titleOf(untouched, 'BALANCE')).toMatchObject({ status: 'OPEN', scheduledFor: null });
+
     const res = await post('/api/titles/schedule', {
       titleIds: [advanceId, balanceId],
       date: '2026-03-25',
@@ -350,6 +372,12 @@ describe('critérios de aceite', () => {
     expect(receivable.json<ScheduleResultDto>().rejected[0]?.code).toBe(
       'ONLY_PAYABLE_CAN_BE_SCHEDULED',
     );
+
+    const receivableSingle = await post(`/api/titles/${receivableId}/schedule`, {
+      date: '2026-03-25',
+    });
+    expect(receivableSingle.statusCode).toBe(422);
+    expect(errorCode(receivableSingle)).toBe('ONLY_PAYABLE_CAN_BE_SCHEDULED');
   });
 
   it('6. descarga sem comprovante mantém o saldo travado', async () => {
@@ -424,12 +452,26 @@ describe('critérios de aceite', () => {
 
     const schedule = await post('/api/titles/schedule', {
       titleIds: [balanceId],
-      date: '2026-03-27',
+      date: '2026-03-26',
     });
     expect(schedule.json<ScheduleResultDto>()).toMatchObject({
-      scheduled: [{ id: balanceId, status: 'SCHEDULED', scheduledFor: '2026-03-27' }],
+      scheduled: [{ id: balanceId, status: 'SCHEDULED', scheduledFor: '2026-03-26' }],
       rejected: [],
     });
+
+    // Reprogramação individual: 200 com o título e as travas.
+    const reschedule = await post(`/api/titles/${balanceId}/schedule`, { date: '2026-03-27' });
+    expect(reschedule.statusCode).toBe(200);
+    expect(reschedule.json<TitleWithLocksDto>()).toMatchObject({
+      id: balanceId,
+      status: 'SCHEDULED',
+      scheduledFor: '2026-03-27',
+      effectiveDate: '2026-03-27',
+      locks: { canSchedule: true, canSettle: false },
+    });
+    const past = await post(`/api/titles/${balanceId}/schedule`, { date: '2026-03-19' });
+    expect(past.statusCode).toBe(422);
+    expect(errorCode(past)).toBe('INVALID_DATE');
 
     const settleBeforeAdvance = await post(`/api/titles/${balanceId}/settle`, {
       paidOn: TODAY,
@@ -453,6 +495,29 @@ describe('critérios de aceite', () => {
 
     const window = await get('/api/titles?dueFrom=2026-03-26&dueTo=2026-03-31');
     expect(window.json<TitleListItemDto[]>().map((title) => title.id)).toEqual([balanceId]);
+  });
+
+  it('exportação CSV: mesmos filtros e ordem da agenda, no formato do Excel pt-BR', async () => {
+    const res = await get('/api/titles/export.csv?nature=PAYABLE');
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('text/csv; charset=utf-8');
+    expect(res.headers['content-disposition']).toBe('attachment; filename="titulos.csv"');
+    expect(res.rawPayload.subarray(0, 3)).toEqual(Buffer.from([0xef, 0xbb, 0xbf]));
+    expect(res.body.slice(1).split('\r\n')).toEqual([
+      'Viagem;Natureza;Espécie;Cliente/Motorista;Valor;Vencimento;Programado para;Status;Motivo da trava',
+      'VG-0001;A pagar;Adiantamento;João da Silva;2333,33;20/03/2026;25/03/2026;Programado;',
+      'VG-0001;A pagar;Saldo;João da Silva;1000,00;20/03/2026;27/03/2026;Programado;' +
+        'O saldo só pode ser pago após a baixa do adiantamento',
+      '',
+    ]);
+
+    const receivables = await get('/api/titles/export.csv?nature=RECEIVABLE');
+    expect(receivables.body).toContain(
+      'VG-0001;A receber;Frete do cliente;Agro Cerrado Ltda;5000,00;18/04/2026;;Em aberto;',
+    );
+
+    const invalid = await get('/api/titles/export.csv?nature=TUDO');
+    expect(invalid.statusCode).toBe(400);
   });
 
   it('8. baixa do adiantamento e depois do saldo leva a BALANCE_PAID', async () => {
@@ -652,6 +717,14 @@ describe('critérios de aceite', () => {
 
     const invalid = await get('/api/trips?status=VOANDO');
     expect(invalid.statusCode).toBe(400);
+
+    // Sem cotação: a viagem que ficou com o CT-e mostra o valor dele; a outra, null.
+    const withoutQuote = (await get('/api/trips?q=Sorriso')).json<TripListItemDto[]>();
+    expect(withoutQuote.map((trip) => trip.clientFreightCents)).toHaveLength(2);
+    expect(withoutQuote.map((trip) => trip.clientFreightCents)).toEqual(
+      expect.arrayContaining([500000, null]),
+    );
+    expect(withoutQuote.every((trip) => trip.driverFreightCents === 400000)).toBe(true);
   });
 
   it('painel: indicadores coerentes com os títulos', async () => {
@@ -681,7 +754,221 @@ describe('critérios de aceite', () => {
     });
     expect(missingTitle.statusCode).toBe(404);
 
+    const missingSchedule = await post(`/api/titles/${randomUUID()}/schedule`, { date: TODAY });
+    expect(missingSchedule.statusCode).toBe(404);
+
+    const missingCancel = await post(`/api/trips/${randomUUID()}/cancel`, { reason: 'Teste' });
+    expect(missingCancel.statusCode).toBe(404);
+
     const malformed = await post('/api/trips/123/cte', {});
     expect(malformed.statusCode).toBe(400);
+  });
+});
+
+describe('cancelamento da viagem (R13)', () => {
+  let clientId: string;
+  let driverId: string;
+
+  async function createLoadedTrip(cteNumber: number): Promise<TripDetailDto> {
+    const created = await post('/api/trips', {
+      clientId,
+      driverId,
+      origin: 'Cascavel/PR',
+      destination: 'Paranaguá/PR',
+      product: 'Trigo',
+      weightKg: 32000,
+      quotedClientFreightCents: 400000,
+      driverFreightCents: 300000,
+      advancePercent: 70,
+    });
+    const id = created.json<TripDetailDto>().trip.id;
+    await post(`/api/trips/${id}/cte`, {
+      number: cteNumber,
+      series: 1,
+      issuedAt: '2026-03-20T16:00:00Z',
+      clientFreightCents: 400000,
+    });
+    const loaded = await uploadPhoto(id, PHOTO, '2026-03-20T16:10:00Z');
+    expect(loaded.statusCode).toBe(201);
+    return loaded.json<TripDetailDto>();
+  }
+
+  beforeAll(async () => {
+    setClock('2026-03-20T16:30:00Z');
+    const client = await post('/api/clients', {
+      legalName: 'Cooperativa Vale do Ivaí',
+      cnpj: '45.371.892/0001-75',
+      paymentTermDays: 21,
+    });
+    clientId = client.json<{ id: string }>().id;
+    const driver = await post('/api/drivers', {
+      name: 'Marcos Souza',
+      document: '987.654.321-00',
+      vehiclePlate: 'QWE1F23',
+      pixKey: 'marcos@exemplo.com',
+    });
+    driverId = driver.json<{ id: string }>().id;
+  });
+
+  it('com o adiantamento em aberto: cancela todos os títulos e não gera recuperação', async () => {
+    const loaded = await createLoadedTrip(5005);
+    const id = loaded.trip.id;
+    // Um título programado também é cancelado.
+    const scheduled = await post(`/api/titles/${titleOf(loaded, 'ADVANCE').id}/schedule`, {
+      date: '2026-03-23',
+    });
+    expect(scheduled.statusCode).toBe(200);
+
+    setClock('2026-03-20T17:00:00Z');
+    const res = await post(`/api/trips/${id}/cancel`, { reason: ' Cliente desistiu da carga ' });
+    expect(res.statusCode).toBe(201);
+    const detail = res.json<TripDetailDto>();
+
+    expect(detail.trip.status).toBe('CANCELLED');
+    expect(detail.titles.map((title) => [title.kind, title.status])).toEqual([
+      ['ADVANCE', 'CANCELLED'],
+      ['BALANCE', 'CANCELLED'],
+      ['CLIENT_FREIGHT', 'CANCELLED'],
+    ]);
+    expect(titleOf(detail, 'BALANCE').locks).toEqual({
+      canSchedule: false,
+      canSettle: false,
+      reasons: [],
+    });
+    expect(detail.pendingSteps).toEqual([]);
+    expect(detail.margin).toEqual({
+      kind: 'REALIZED',
+      amountCents: 0,
+      percent: null,
+      isNegative: false,
+    });
+    expect(detail.timeline.at(-2)).toMatchObject({
+      type: 'EVENT',
+      eventType: 'TRIP_CANCELLED',
+      note: 'Cliente desistiu da carga',
+      at: '2026-03-20T17:00:00.000Z',
+    });
+    expect(detail.timeline.at(-1)).toMatchObject({
+      type: 'STATUS_CHANGE',
+      fromStatus: 'LOADED',
+      toStatus: 'CANCELLED',
+      trigger: 'TRIP_CANCELLED',
+    });
+
+    // R6: mesmo motivo é reenvio (200, nada muda); outro motivo é conflito.
+    setClock('2026-03-20T17:05:00Z');
+    const replay = await post(`/api/trips/${id}/cancel`, { reason: 'Cliente desistiu da carga' });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual((await get(`/api/trips/${id}`)).json());
+    const other = await post(`/api/trips/${id}/cancel`, { reason: 'Outro motivo' });
+    expect(other.statusCode).toBe(409);
+    expect(errorCode(other)).toBe('EVENT_ALREADY_REGISTERED');
+
+    const empty = await post(`/api/trips/${id}/cancel`, { reason: '  ' });
+    expect(empty.statusCode).toBe(400);
+  });
+
+  it('com o adiantamento pago: gera a recuperação, zera a margem e recusa eventos posteriores', async () => {
+    setClock('2026-03-20T18:00:00Z');
+    const loaded = await createLoadedTrip(6006);
+    const id = loaded.trip.id;
+    const advance = titleOf(loaded, 'ADVANCE');
+    await post(`/api/titles/${advance.id}/settle`, { paidOn: TODAY, amountCents: 210000 });
+    await post(`/api/trips/${id}/unloading`, { occurredAt: '2026-03-20T17:30:00Z' });
+
+    const beforeUnloading = await post(`/api/trips/${id}/cancel`, {
+      reason: 'Carga avariada',
+      occurredAt: '2026-03-20T17:00:00Z',
+    });
+    expect(beforeUnloading.statusCode).toBe(422);
+    expect(errorCode(beforeUnloading)).toBe('INVALID_EVENT_DATE');
+
+    // 23h30 de 20/03 em São Paulo: a recuperação vence nessa data de negócio.
+    setClock('2026-03-21T02:40:00Z');
+    const res = await post(`/api/trips/${id}/cancel`, {
+      reason: 'Carga avariada',
+      occurredAt: '2026-03-21T02:30:00Z',
+    });
+    expect(res.statusCode).toBe(201);
+    const detail = res.json<TripDetailDto>();
+
+    expect(detail.trip.status).toBe('CANCELLED');
+    expect(detail.titles.map((title) => [title.kind, title.status])).toEqual([
+      ['ADVANCE', 'PAID'],
+      ['BALANCE', 'CANCELLED'],
+      ['CLIENT_FREIGHT', 'CANCELLED'],
+      ['ADVANCE_RECOVERY', 'OPEN'],
+    ]);
+    const recovery = titleOf(detail, 'ADVANCE_RECOVERY');
+    expect(recovery).toMatchObject({
+      nature: 'RECEIVABLE',
+      amountCents: 210000,
+      dueDate: '2026-03-20',
+      locks: { canSchedule: true, canSettle: true, reasons: [] },
+    });
+    expect(detail.margin).toEqual({
+      kind: 'REALIZED',
+      amountCents: 0,
+      percent: null,
+      isNegative: false,
+    });
+    expect(detail.pendingSteps).toEqual([
+      { code: 'ADVANCE_RECOVERY_PENDING', message: 'Recuperar adiantamento pago ao motorista' },
+    ]);
+
+    const listed = (await get('/api/trips?status=CANCELLED')).json<TripListItemDto[]>();
+    expect(listed.find((trip) => trip.id === id)).toMatchObject({
+      clientFreightCents: 400000,
+      driverFreightCents: 300000,
+      margin: { kind: 'REALIZED', amountCents: 0 },
+      pendingSteps: [{ code: 'ADVANCE_RECOVERY_PENDING' }],
+    });
+
+    // Eventos posteriores: 409.
+    const proofs = await post(`/api/trips/${id}/proofs`, { occurredAt: '2026-03-21T02:35:00Z' });
+    expect(proofs.statusCode).toBe(409);
+    expect(errorCode(proofs)).toBe('TRIP_CANCELLED');
+    const settleBalance = await post(`/api/titles/${titleOf(detail, 'BALANCE').id}/settle`, {
+      paidOn: TODAY,
+      amountCents: 90000,
+    });
+    expect(settleBalance.statusCode).toBe(409);
+    expect(errorCode(settleBalance)).toBe('TITLE_CANCELLED');
+    const scheduleRecovery = await post(`/api/titles/${recovery.id}/schedule`, {
+      date: '2026-03-23',
+    });
+    expect(scheduleRecovery.statusCode).toBe(422);
+    expect(errorCode(scheduleRecovery)).toBe('ONLY_PAYABLE_CAN_BE_SCHEDULED');
+
+    // A recuperação entra na agenda a receber e no CSV, com o nome do motorista.
+    const receivables = (await get(`/api/titles?nature=RECEIVABLE&tripId=${id}`)).json<
+      TitleListItemDto[]
+    >();
+    expect(receivables.map((title) => [title.kind, title.bucket])).toEqual([
+      ['ADVANCE_RECOVERY', 'TODAY'],
+      ['CLIENT_FREIGHT', null],
+    ]);
+    const csv = await get(`/api/titles/export.csv?kind=ADVANCE_RECOVERY`);
+    expect(csv.body).toContain(
+      ';A receber;Recuperação de adiantamento;Marcos Souza;2100,00;20/03/2026;;Em aberto;',
+    );
+
+    // Receber o adiantamento de volta zera a pendência; a viagem continua cancelada.
+    const recovered = await post(`/api/titles/${recovery.id}/settle`, {
+      paidOn: '2026-03-20',
+      amountCents: 210000,
+    });
+    expect(recovered.statusCode).toBe(200);
+    const after = (await get(`/api/trips/${id}`)).json<TripDetailDto>();
+    expect(after.trip.status).toBe('CANCELLED');
+    expect(after.pendingSteps).toEqual([]);
+    expect(after.margin).toMatchObject({ amountCents: 0 });
+  });
+
+  it('viagem finalizada (saldo pago) não pode ser cancelada', async () => {
+    const [finished] = (await get('/api/trips?status=BALANCE_PAID')).json<TripListItemDto[]>();
+    const res = await post(`/api/trips/${finished!.id}/cancel`, { reason: 'Engano' });
+    expect(res.statusCode).toBe(409);
+    expect(errorCode(res)).toBe('TRIP_ALREADY_FINISHED');
   });
 });

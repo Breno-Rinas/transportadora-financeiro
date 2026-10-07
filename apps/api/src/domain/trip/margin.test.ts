@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateTripMargin, percentOf, type MarginTitle } from './margin.js';
+import { calculateTripMargin, percentOf, sumTitleFreights, type MarginTitle } from './margin.js';
 
 const titles = (clientCents: number, advanceCents: number, balanceCents: number): MarginTitle[] => [
   { kind: 'CLIENT_FREIGHT', status: 'OPEN', amountCents: clientCents },
@@ -13,6 +13,7 @@ describe('calculateTripMargin (R7)', () => {
       titles: titles(500000, 233333, 100000),
       quotedClientFreightCents: 450000,
       driverFreightCents: 333333,
+      cancelled: false,
     });
 
     expect(margin).toEqual({
@@ -28,6 +29,7 @@ describe('calculateTripMargin (R7)', () => {
       titles: titles(300000, 233333, 100000),
       quotedClientFreightCents: null,
       driverFreightCents: 333333,
+      cancelled: false,
     });
 
     expect(margin).toEqual({
@@ -48,6 +50,7 @@ describe('calculateTripMargin (R7)', () => {
       titles: withCancelled,
       quotedClientFreightCents: null,
       driverFreightCents: 333333,
+      cancelled: false,
     });
 
     expect(margin?.amountCents).toBe(166667);
@@ -58,6 +61,7 @@ describe('calculateTripMargin (R7)', () => {
       titles: [],
       quotedClientFreightCents: 300000,
       driverFreightCents: 333333,
+      cancelled: false,
     });
 
     expect(margin).toEqual({
@@ -74,8 +78,62 @@ describe('calculateTripMargin (R7)', () => {
         titles: [],
         quotedClientFreightCents: null,
         driverFreightCents: 333333,
+        cancelled: false,
       }),
     ).toBeNull();
+  });
+});
+
+describe('calculateTripMargin na viagem cancelada (R13)', () => {
+  const cancelledTrip = (cancelledTitles: MarginTitle[]) =>
+    calculateTripMargin({
+      titles: cancelledTitles,
+      quotedClientFreightCents: 500000,
+      driverFreightCents: 333333,
+      cancelled: true,
+    });
+
+  it('adiantamento pago e recuperado: a margem fica zerada', () => {
+    expect(
+      cancelledTrip([
+        { kind: 'CLIENT_FREIGHT', status: 'CANCELLED', amountCents: 500000 },
+        { kind: 'ADVANCE', status: 'PAID', amountCents: 233333 },
+        { kind: 'BALANCE', status: 'CANCELLED', amountCents: 100000 },
+        { kind: 'ADVANCE_RECOVERY', status: 'OPEN', amountCents: 233333 },
+      ]),
+    ).toEqual({ kind: 'REALIZED', amountCents: 0, percent: null, isNegative: false });
+  });
+
+  it('com tudo cancelado, a margem realizada é zero', () => {
+    expect(
+      cancelledTrip([
+        { kind: 'CLIENT_FREIGHT', status: 'CANCELLED', amountCents: 500000 },
+        { kind: 'ADVANCE', status: 'CANCELLED', amountCents: 233333 },
+        { kind: 'BALANCE', status: 'CANCELLED', amountCents: 100000 },
+      ]),
+    ).toMatchObject({ kind: 'REALIZED', amountCents: 0 });
+  });
+
+  it('sem títulos, não projeta o frete cotado: a margem é zero', () => {
+    expect(cancelledTrip([])).toEqual({
+      kind: 'REALIZED',
+      amountCents: 0,
+      percent: null,
+      isNegative: false,
+    });
+  });
+});
+
+describe('sumTitleFreights', () => {
+  it('a recuperação do adiantamento abate o custo do motorista', () => {
+    expect(
+      sumTitleFreights([
+        { kind: 'CLIENT_FREIGHT', status: 'PAID', amountCents: 500000 },
+        { kind: 'ADVANCE', status: 'PAID', amountCents: 233333 },
+        { kind: 'BALANCE', status: 'CANCELLED', amountCents: 100000 },
+        { kind: 'ADVANCE_RECOVERY', status: 'PAID', amountCents: 233333 },
+      ]),
+    ).toEqual({ clientFreightCents: 500000, driverFreightCents: 0 });
   });
 });
 

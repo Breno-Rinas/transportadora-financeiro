@@ -23,7 +23,8 @@ enum TripStatus {
   UNLOADED
   PROOFS_RECEIVED
   BALANCE_PAID
-  CANCELLED // reservado para o bônus: nenhuma regra o usa ainda
+  /// Estado terminal fora da sequência (R13).
+  CANCELLED
 
   @@map("trip_status")
 }
@@ -33,6 +34,7 @@ enum TripEventType {
   LOADING_PHOTO_ATTACHED
   UNLOADED
   PROOFS_RECEIVED
+  TRIP_CANCELLED
 
   @@map("trip_event_type")
 }
@@ -55,6 +57,8 @@ enum TitleKind {
   ADVANCE
   BALANCE
   CLIENT_FREIGHT
+  /// A receber do motorista: adiantamento pago de viagem cancelada (R13).
+  ADVANCE_RECOVERY
 
   @@map("title_kind")
 }

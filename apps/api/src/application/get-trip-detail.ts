@@ -104,6 +104,7 @@ export async function getTripDetail(context: UseCaseContext, tripId: string): Pr
       titles,
       quotedClientFreightCents: trip.quotedClientFreightCents,
       driverFreightCents: agreement.driverFreightCents,
+      cancelled: trip.status === 'CANCELLED',
     }),
     pendingSteps: getPendingSteps(facts),
   };

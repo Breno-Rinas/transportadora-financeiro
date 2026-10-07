@@ -13,7 +13,8 @@ export type EventFingerprint =
     }
   | { type: 'LOADING_PHOTO_ATTACHED'; sha256: string }
   | { type: 'UNLOADED'; occurredAt: Date }
-  | { type: 'PROOFS_RECEIVED'; occurredAt: Date };
+  | { type: 'PROOFS_RECEIVED'; occurredAt: Date }
+  | { type: 'TRIP_CANCELLED'; reason: string };
 
 /** NEW: registrar e processar. REPLAY: reenvio idêntico, devolver o estado atual sem reprocessar. */
 export type EventRegistration = 'NEW' | 'REPLAY';
@@ -23,9 +24,13 @@ const ALREADY_REGISTERED_MESSAGES: Record<TripEventType, string> = {
   LOADING_PHOTO_ATTACHED: 'Esta viagem já tem outra foto do carregamento registrada.',
   UNLOADED: 'A descarga desta viagem já foi registrada com outra data.',
   PROOFS_RECEIVED: 'A chegada dos comprovantes desta viagem já foi registrada com outra data.',
+  TRIP_CANCELLED: 'Esta viagem já foi cancelada com outro motivo.',
 };
 
-/** Chave de comparação do R6: CT-e pelos seus dados, foto pelo arquivo, demais pela data. */
+/**
+ * Chave de comparação do R6: CT-e pelos seus dados, foto pelo arquivo, cancelamento pelo motivo
+ * (a data é opcional e, omitida, vale o momento do envio), demais pela data.
+ */
 function comparisonKey(event: EventFingerprint): string {
   switch (event.type) {
     case 'CTE_ISSUED':
@@ -40,6 +45,8 @@ function comparisonKey(event: EventFingerprint): string {
     case 'UNLOADED':
     case 'PROOFS_RECEIVED':
       return event.occurredAt.toISOString();
+    case 'TRIP_CANCELLED':
+      return event.reason.trim();
   }
 }
 
@@ -71,9 +78,22 @@ interface PrecedingFact {
   outOfOrderMessage: string;
 }
 
+/** O fato operacional mais recente da viagem, ou null se nenhum foi registrado. */
+function getLatestFact(facts: TripFacts): Date | null {
+  const instants = [
+    facts.cteIssuedAt,
+    facts.loadingPhotoAt,
+    facts.unloadedAt,
+    facts.proofsReceivedAt,
+  ].filter((instant) => instant !== null);
+  if (instants.length === 0) return null;
+  return new Date(Math.max(...instants.map((instant) => instant.getTime())));
+}
+
 /**
  * O fato que precisa estar registrado antes do evento (R9), ou null para CT-e e foto, que são
- * aceitos em qualquer ordem. Lança o erro de pré-condição quando ele ainda falta.
+ * aceitos em qualquer ordem. Lança o erro de pré-condição quando ele ainda falta. O cancelamento
+ * (R13) não exige nenhum fato, mas não pode ser anterior ao último registrado.
  */
 function requirePrecedingFact(type: TripEventType, facts: TripFacts): PrecedingFact | null {
   switch (type) {
@@ -104,6 +124,16 @@ function requirePrecedingFact(type: TripEventType, facts: TripFacts): PrecedingF
         occurredAt: facts.unloadedAt,
         outOfOrderMessage: 'A chegada dos comprovantes não pode ser anterior à descarga.',
       };
+    }
+    case 'TRIP_CANCELLED': {
+      const latestFact = getLatestFact(facts);
+      return latestFact === null
+        ? null
+        : {
+            occurredAt: latestFact,
+            outOfOrderMessage:
+              'O cancelamento não pode ser anterior ao último fato registrado da viagem.',
+          };
     }
   }
 }
