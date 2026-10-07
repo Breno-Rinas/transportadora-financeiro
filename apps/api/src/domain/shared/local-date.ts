@@ -77,19 +77,58 @@ export function getMonthRange(date: LocalDate): DateRange {
   return { from: formatUtcDate(firstDay), to: formatUtcDate(lastDay) };
 }
 
+/** Data e hora de parede de um instante no fuso informado, com zeros à esquerda. */
+function getWallClock(instant: Date, timeZone: string): Record<string, string> {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  return Object.fromEntries(
+    formatter.formatToParts(instant).map(({ type, value }) => [type, value]),
+  );
+}
+
 /**
  * Data de negócio de um instante: o dia do calendário no fuso informado (em produção,
  * `America/Sao_Paulo`). Ex.: 2026-03-12T01:00Z ainda é 11/03 em São Paulo.
  */
 export function toBusinessDate(instant: Date, timeZone: string): LocalDate {
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  const parts = Object.fromEntries(
-    formatter.formatToParts(instant).map(({ type, value }) => [type, value]),
+  const wallClock = getWallClock(instant, timeZone);
+  return `${wallClock.year}-${wallClock.month}-${wallClock.day}`;
+}
+
+/** Quanto o relógio de parede do fuso está à frente do UTC no instante, em ms (-3h em SP). */
+function getUtcOffsetMs(instant: number, timeZone: string): number {
+  const wallClock = getWallClock(new Date(instant), timeZone);
+  const wallClockAsUtc = Date.UTC(
+    Number(wallClock.year),
+    Number(wallClock.month) - 1,
+    Number(wallClock.day),
+    Number(wallClock.hour),
+    Number(wallClock.minute),
+    Number(wallClock.second),
   );
-  return `${parts.year}-${parts.month}-${parts.day}`;
+  return wallClockAsUtc - (instant - (instant % 1000));
+}
+
+/**
+ * Primeiro instante da data de negócio no fuso informado; o inverso de `toBusinessDate`. Serve
+ * para filtrar instantes por período de datas: [início de `from`, início de `to` + 1 dia).
+ * Ex.: 12/03/2026 em São Paulo começa em 2026-03-12T03:00Z.
+ */
+export function startOfBusinessDay(date: LocalDate, timeZone: string): Date {
+  const utcMidnight = parseLocalDate(date).getTime();
+  // O deslocamento depende do instante (horário de verão): corrige uma vez com o do candidato.
+  const first = utcMidnight - getUtcOffsetMs(utcMidnight, timeZone);
+  const second = utcMidnight - getUtcOffsetMs(first, timeZone);
+  // Num dia em que a meia-noite não existe (o relógio pula para 01:00), só um dos candidatos
+  // cai na data: o dia começa nele.
+  const [earliest, latest] = first <= second ? [first, second] : [second, first];
+  return new Date(toBusinessDate(new Date(earliest), timeZone) === date ? earliest : latest);
 }

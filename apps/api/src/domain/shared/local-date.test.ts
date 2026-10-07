@@ -6,6 +6,7 @@ import {
   getMonthRange,
   isValidLocalDate,
   isWithinRange,
+  startOfBusinessDay,
   toBusinessDate,
 } from './local-date.js';
 
@@ -77,5 +78,47 @@ describe('getMonthRange', () => {
     expect(getMonthRange('2026-02-15')).toEqual({ from: '2026-02-01', to: '2026-02-28' });
     expect(getMonthRange('2028-02-10')).toEqual({ from: '2028-02-01', to: '2028-02-29' });
     expect(getMonthRange('2026-12-31')).toEqual({ from: '2026-12-01', to: '2026-12-31' });
+  });
+});
+
+describe('startOfBusinessDay', () => {
+  it('12/03 começa às 03:00Z em São Paulo e à meia-noite em UTC', () => {
+    expect(startOfBusinessDay('2026-03-12', SAO_PAULO).toISOString()).toBe(
+      '2026-03-12T03:00:00.000Z',
+    );
+    expect(startOfBusinessDay('2026-03-12', 'UTC').toISOString()).toBe('2026-03-12T00:00:00.000Z');
+  });
+
+  it('é o inverso de toBusinessDate: o instante anterior ainda é o dia de antes', () => {
+    for (const date of ['2026-01-01', '2026-03-12', '2026-10-06', '2026-12-31']) {
+      const start = startOfBusinessDay(date, SAO_PAULO);
+      expect(toBusinessDate(start, SAO_PAULO)).toBe(date);
+      expect(toBusinessDate(new Date(start.getTime() - 1), SAO_PAULO)).toBe(addDays(date, -1));
+    }
+  });
+
+  it('acompanha o horário de verão do fuso', () => {
+    // Nova York: o horário de verão começa em 08/03/2026 às 02:00; a meia-noite ainda é -05:00.
+    expect(startOfBusinessDay('2026-03-08', 'America/New_York').toISOString()).toBe(
+      '2026-03-08T05:00:00.000Z',
+    );
+    expect(startOfBusinessDay('2026-03-09', 'America/New_York').toISOString()).toBe(
+      '2026-03-09T04:00:00.000Z',
+    );
+  });
+
+  it('num dia sem meia-noite (início do antigo horário de verão de SP), começa às 01:00', () => {
+    // 04/11/2018: o relógio pulou de 00:00 para 01:00 (-02:00).
+    expect(startOfBusinessDay('2018-11-04', SAO_PAULO).toISOString()).toBe(
+      '2018-11-04T03:00:00.000Z',
+    );
+    // 17/02/2019: o horário de verão terminou à meia-noite e 16/02 teve 25 horas.
+    expect(startOfBusinessDay('2019-02-17', SAO_PAULO).toISOString()).toBe(
+      '2019-02-17T03:00:00.000Z',
+    );
+  });
+
+  it('recusa data inexistente', () => {
+    expect(() => startOfBusinessDay('2026-02-30', SAO_PAULO)).toThrow(withCode('INVALID_DATE'));
   });
 });

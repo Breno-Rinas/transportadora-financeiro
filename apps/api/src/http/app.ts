@@ -10,6 +10,7 @@ import { systemClock } from '../infra/clock.js';
 import { env } from '../infra/env.js';
 import type { PrismaClient } from '../infra/prisma.js';
 import { prisma } from '../infra/prisma.js';
+import { MAX_UPLOAD_BYTES } from '../infra/storage.js';
 import { registerErrorHandling } from './error-handler.js';
 import { registerRoutes } from './routes/index.js';
 
@@ -26,8 +27,6 @@ export interface AppDeps {
 export interface BuildAppOptions extends Partial<AppDeps> {
   logger?: boolean;
 }
-
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const deps: AppDeps = {

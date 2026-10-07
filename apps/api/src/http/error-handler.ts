@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
-import { DomainError } from '../domain/errors.js';
+import { DomainError, type DomainErrorCode } from '../domain/errors.js';
 
 /** Formato único de erro da API (ver CLAUDE.md, "API HTTP"). */
 export interface ApiErrorBody {
@@ -8,10 +8,33 @@ export interface ApiErrorBody {
 }
 
 /**
- * Mapeamento `DomainError.code` -> status HTTP (409 conflito, 422 violação de regra).
- * Um código fora do mapa é tratado como bug (500), para nunca vazar um status errado.
+ * Mapeamento `DomainError.code` -> status HTTP (409 conflito, 422 violação de regra). O tipo
+ * obriga a mapear todo código de `DomainErrorCode`. Um código fora do mapa é tratado como bug
+ * (500), para nunca vazar um status errado.
  */
-export const statusByCode: Readonly<Record<string, number | undefined>> = {};
+export const statusByCode: Readonly<Record<DomainErrorCode, number>> = {
+  VALIDATION_ERROR: 400,
+  NOT_FOUND: 404,
+  EVENT_ALREADY_REGISTERED: 409,
+  TRIP_NOT_LOADED: 409,
+  UNLOADING_NOT_REGISTERED: 409,
+  TITLE_ALREADY_PAID: 409,
+  DOCUMENT_ALREADY_EXISTS: 409,
+  CTE_NUMBER_IN_USE: 409,
+  TRIP_CANCELLED: 409,
+  TITLE_CANCELLED: 409,
+  BALANCE_LOCKED: 422,
+  ADVANCE_NOT_PAID: 422,
+  PARTIAL_PAYMENT_NOT_SUPPORTED: 422,
+  INVALID_EVENT_DATE: 422,
+  INVALID_DATE: 422,
+  ONLY_PAYABLE_CAN_BE_SCHEDULED: 422,
+  INVALID_DOCUMENT: 422,
+};
+
+function getDomainErrorStatus(code: string): number | undefined {
+  return Object.hasOwn(statusByCode, code) ? statusByCode[code as DomainErrorCode] : undefined;
+}
 
 const INTERNAL_ERROR_MESSAGE = 'Erro interno do servidor';
 
@@ -51,7 +74,7 @@ function handleError(error: unknown, request: FastifyRequest, reply: FastifyRepl
   }
 
   if (error instanceof DomainError) {
-    const status = statusByCode[error.code];
+    const status = getDomainErrorStatus(error.code);
     if (status !== undefined) {
       void reply.status(status).send(apiError(error.code, error.message, error.details));
       return;
