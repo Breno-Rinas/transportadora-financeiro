@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  businessDateTimeToIso,
   formatBRL,
   formatBRLNumber,
   formatDate,
@@ -14,8 +15,10 @@ import {
   normalizeCnpj,
   normalizeDocument,
   normalizePlate,
+  nowDateTime,
   onlyDigits,
   parseBRL,
+  todayLocalDate,
 } from './format';
 
 /** O Intl usa espaço sem quebra (U+00A0) depois de `R$`; nos testes comparamos com espaço comum. */
@@ -221,5 +224,37 @@ describe('máscaras', () => {
     expect(onlyDigits('12.345.678/0001-95')).toBe('12345678000195');
     expect(normalizePlate('abc-1d23')).toBe('ABC1D23');
     expect(normalizePlate('  abc 1234 ')).toBe('ABC1234');
+  });
+});
+
+describe('nowDateTime e todayLocalDate', () => {
+  it('usam o fuso de negócio (UTC-3), não o do navegador', () => {
+    const instant = new Date('2026-10-06T17:30:45Z');
+    expect(nowDateTime(instant)).toBe('2026-10-06 14:30:45');
+    expect(todayLocalDate(instant)).toBe('2026-10-06');
+  });
+
+  it('o dia ainda não virou no fuso de negócio depois da meia-noite UTC', () => {
+    const instant = new Date('2026-10-07T01:15:00Z');
+    expect(nowDateTime(instant)).toBe('2026-10-06 22:15:00');
+    expect(todayLocalDate(instant)).toBe('2026-10-06');
+  });
+});
+
+describe('businessDateTimeToIso', () => {
+  it('converte a hora de parede do fuso de negócio em instante UTC', () => {
+    expect(businessDateTimeToIso('2026-10-06 14:30:00')).toBe('2026-10-06T17:30:00.000Z');
+    expect(businessDateTimeToIso('2026-10-06 22:15')).toBe('2026-10-07T01:15:00.000Z');
+    expect(businessDateTimeToIso('2026-10-06T09:00:30')).toBe('2026-10-06T12:00:30.000Z');
+  });
+
+  it('desfaz o nowDateTime', () => {
+    const instant = new Date('2026-03-12T15:04:05Z');
+    expect(businessDateTimeToIso(nowDateTime(instant))).toBe('2026-03-12T15:04:05.000Z');
+  });
+
+  it('devolve null para texto fora do padrão', () => {
+    expect(businessDateTimeToIso('')).toBeNull();
+    expect(businessDateTimeToIso('06/10/2026 14:30')).toBeNull();
   });
 });

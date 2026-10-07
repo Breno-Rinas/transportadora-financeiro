@@ -15,7 +15,11 @@ import {
   SearchInput,
 } from '../components';
 import { formatDate, maskPlate } from '../lib/format';
-import { TRIP_STATUS_FILTER_ORDER, TRIP_STATUS_LABEL } from '../lib/labels';
+import {
+  TRIP_STATUS_BOARD_ORDER,
+  TRIP_STATUS_FILTER_ORDER,
+  TRIP_STATUS_LABEL,
+} from '../lib/labels';
 import { NewTripModal } from './trips/NewTripModal';
 import { TripCard } from './trips/TripCard';
 import { useTripFilters } from './trips/use-trip-filters';
@@ -64,8 +68,6 @@ export function TripsPage() {
     label: `${driver.name} · ${maskPlate(driver.vehiclePlate)}`,
   }));
 
-  const columnStatuses: readonly TripStatus[] = status ? [status] : TRIP_STATUS_FILTER_ORDER;
-
   function renderContent() {
     if (trips.isPending) return <BoardSkeleton columns={5} />;
     if (trips.isError) {
@@ -105,6 +107,12 @@ export function TripsPage() {
     }
 
     const groups = groupByStatus(trips.data);
+    // A coluna "Cancelada" só aparece quando há viagem cancelada ou quando o filtro a pede.
+    const columnStatuses: readonly TripStatus[] = status
+      ? [status]
+      : groups.has('CANCELLED')
+        ? [...TRIP_STATUS_BOARD_ORDER, 'CANCELLED']
+        : TRIP_STATUS_BOARD_ORDER;
     return (
       <div style={{ opacity: trips.isPlaceholderData ? 0.6 : 1, transition: 'opacity 120ms' }}>
         <Board label="Viagens por status">

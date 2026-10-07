@@ -10,12 +10,11 @@ import {
 import dayjs from 'dayjs';
 import { useDashboard, useTitles } from '../api/hooks';
 import type { Dashboard, TitleListItem } from '../api/types';
-import { ErrorState, Money, PageHeader } from '../components';
+import { ErrorState, KpiCard, Money, PageHeader } from '../components';
 import { formatBRL, formatPercent } from '../lib/format';
 import { financePath, tripsPath } from '../lib/routes';
 import { ActionList } from './dashboard/ActionList';
 import classes from './dashboard/Dashboard.module.css';
-import { KpiCard } from './dashboard/KpiCard';
 
 function pluralize(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`;

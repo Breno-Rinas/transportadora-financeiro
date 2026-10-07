@@ -37,14 +37,20 @@ export const TRIP_STATUS_COLOR: Record<TripStatus, MantineColor> = {
   CANCELLED: 'dark',
 };
 
-/** Estados oferecidos como filtro, na ordem do ciclo de vida (sem `CANCELLED`, ainda reservado). */
-export const TRIP_STATUS_FILTER_ORDER: readonly TripStatus[] = [
+/** Colunas do quadro de viagens, na ordem do ciclo de vida (a "Cancelada" é à parte). */
+export const TRIP_STATUS_BOARD_ORDER: readonly TripStatus[] = [
   'CREATED',
   'LOADED',
   'ADVANCE_PAID',
   'UNLOADED',
   'PROOFS_RECEIVED',
   'BALANCE_PAID',
+];
+
+/** Estados oferecidos como filtro: o ciclo de vida e, por último, a viagem cancelada. */
+export const TRIP_STATUS_FILTER_ORDER: readonly TripStatus[] = [
+  ...TRIP_STATUS_BOARD_ORDER,
+  'CANCELLED',
 ];
 
 /** Todos os estados válidos de viagem, para validar valores vindos da querystring. */
@@ -78,6 +84,29 @@ export const TITLE_KIND_LABEL: Record<TitleKind, string> = {
   ADVANCE: 'Adiantamento',
   BALANCE: 'Saldo',
   CLIENT_FREIGHT: 'Frete do cliente',
+  ADVANCE_RECOVERY: 'Recuperação de adiantamento',
+};
+
+/** Espécies na ordem de exibição (filtro do Financeiro). */
+export const TITLE_KIND_ORDER: readonly TitleKind[] = [
+  'ADVANCE',
+  'BALANCE',
+  'CLIENT_FREIGHT',
+  'ADVANCE_RECOVERY',
+];
+
+/** Todas as naturezas, para validar valores vindos da querystring. */
+export const TITLE_NATURES: readonly TitleNature[] = ['PAYABLE', 'RECEIVABLE'];
+
+/**
+ * Com quem o título é acertado, para escolher o nome do card. Não basta a natureza: a recuperação
+ * do adiantamento é a receber, mas do motorista.
+ */
+export const TITLE_COUNTERPARTY: Record<TitleKind, 'CLIENT' | 'DRIVER'> = {
+  ADVANCE: 'DRIVER',
+  BALANCE: 'DRIVER',
+  CLIENT_FREIGHT: 'CLIENT',
+  ADVANCE_RECOVERY: 'DRIVER',
 };
 
 /** Faixas da agenda do Financeiro, na ordem de exibição. */
@@ -110,7 +139,24 @@ export const TRIP_EVENT_LABEL: Record<TripEventType, string> = {
   LOADING_PHOTO_ATTACHED: 'Foto do carregamento anexada',
   UNLOADED: 'Descarga registrada',
   PROOFS_RECEIVED: 'Canhoto original recebido',
+  TRIP_CANCELLED: 'Viagem cancelada',
 };
+
+/** Gatilhos gravados nas transições de status (`TimelineStatusChangeEntry.trigger`), em pt-BR. */
+const STATUS_TRIGGER_LABEL: Record<string, string> = {
+  TRIP_CREATED: 'Viagem criada',
+  CTE_AND_LOADING_PHOTO_REGISTERED: 'CT-e e foto do carregamento registrados',
+  ADVANCE_SETTLED: 'Adiantamento baixado',
+  UNLOADING_REGISTERED: 'Descarga registrada',
+  PROOFS_REGISTERED: 'Canhoto original registrado',
+  BALANCE_SETTLED: 'Saldo baixado',
+  TRIP_CANCELLED: 'Viagem cancelada',
+};
+
+/** Gatilho em pt-BR; um gatilho desconhecido aparece como veio. */
+export function statusTriggerLabel(trigger: string): string {
+  return STATUS_TRIGGER_LABEL[trigger] ?? trigger;
+}
 
 export const ATTACHMENT_KIND_LABEL: Record<AttachmentKind, string> = {
   LOADING_PHOTO: 'Foto do carregamento',

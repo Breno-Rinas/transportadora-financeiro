@@ -25,8 +25,8 @@ interface KpiCardProps {
   value: ReactNode;
   /** Linha de apoio (quantidade de títulos, percentual). */
   detail?: ReactNode;
-  /** Destino do clique: `/financeiro` ou `/viagens` com o filtro na querystring. */
-  to: string;
+  /** Destino do clique (`/financeiro` ou `/viagens` com o filtro); sem ele, o card é só informativo. */
+  to?: string;
   /** `red` e `indigo` são os destaques fortes (vencidos e vencendo hoje). */
   tone?: KpiTone;
   /** Cor da borda esquerda nos cards neutros. */
@@ -35,7 +35,7 @@ interface KpiCardProps {
   muted?: boolean;
 }
 
-/** KPI do painel no estilo de card do sistema; o card inteiro é um link para o filtro. */
+/** KPI no estilo de card do sistema; com `to`, o card inteiro é um link para o filtro. */
 export function KpiCard({
   label,
   icon,
@@ -46,14 +46,30 @@ export function KpiCard({
   accent = 'indigo',
   muted,
 }: KpiCardProps) {
-  return (
-    <Link to={to} className={`${classes.kpi} ${TONE_CLASS[tone]} ${ACCENT_CLASS[accent]}`}>
+  const className = [
+    classes.kpi,
+    TONE_CLASS[tone],
+    ACCENT_CLASS[accent],
+    to ? classes.interactive : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const content = (
+    <>
       <span className={classes.label}>
         {icon}
         {label}
       </span>
       <span className={`${classes.value} ${muted ? classes.muted : ''}`}>{value}</span>
-      {detail ? <span className={classes.detail}>{detail}</span> : null}
+      {detail ? <div className={classes.detail}>{detail}</div> : null}
+    </>
+  );
+
+  return to ? (
+    <Link to={to} className={className}>
+      {content}
     </Link>
+  ) : (
+    <div className={className}>{content}</div>
   );
 }

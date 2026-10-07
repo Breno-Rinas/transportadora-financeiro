@@ -1,5 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import {
+  cancelTrip,
   createClient,
   createDriver,
   createTrip,
@@ -12,6 +13,7 @@ import {
   registerCte,
   registerProofs,
   registerUnloading,
+  scheduleTitle,
   scheduleTitles,
   settleTitle,
   uploadLoadingPhoto,
@@ -19,6 +21,7 @@ import {
 import { useApiMutation } from './mutation';
 import { queryKeys } from './query-keys';
 import type {
+  CancelTripInput,
   CreateClientInput,
   CreateDriverInput,
   CreateTripInput,
@@ -27,13 +30,14 @@ import type {
   RegisterProofsInput,
   RegisterUnloadingInput,
   ScheduleResult,
+  ScheduleTitleInput,
   ScheduleTitlesInput,
   SettleTitleInput,
   TitleFilters,
   TripFilters,
   UploadLoadingPhotoInput,
 } from './types';
-import { formatTripCode } from '../lib/format';
+import { formatDate, formatTripCode } from '../lib/format';
 
 /** O painel se atualiza sozinho: um analista deixa a aba aberta o dia todo. */
 const DASHBOARD_REFETCH_MS = 30_000;
@@ -154,6 +158,13 @@ export function useRegisterProofs() {
   });
 }
 
+export function useCancelTrip() {
+  return useApiMutation({
+    mutationFn: ({ tripId, input }: TripVariables<CancelTripInput>) => cancelTrip(tripId, input),
+    successMessage: 'Viagem cancelada',
+  });
+}
+
 function scheduleMessage({ scheduled, rejected }: ScheduleResult): string {
   const done = `${scheduled.length} ${scheduled.length === 1 ? 'título programado' : 'títulos programados'}`;
   if (rejected.length === 0) return done;
@@ -169,6 +180,18 @@ export function useScheduleTitles() {
     mutationFn: (input: ScheduleTitlesInput) => scheduleTitles(input),
     successMessage: scheduleMessage,
     successColor: ({ rejected }) => (rejected.length > 0 ? 'yellow' : 'green'),
+  });
+}
+
+/** Programação individual: o motivo da recusa chega como `ApiError.message` (erro 422). */
+export function useScheduleTitle() {
+  return useApiMutation({
+    mutationFn: ({ titleId, input }: { titleId: string; input: ScheduleTitleInput }) =>
+      scheduleTitle(titleId, input),
+    successMessage: ({ scheduledFor }) =>
+      scheduledFor
+        ? `Pagamento programado para ${formatDate(scheduledFor)}`
+        : 'Pagamento programado',
   });
 }
 

@@ -1,0 +1,29 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.selectionBar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 14px;
+  align-self: center;
+  margin-top: 14px;
+  padding: 10px 16px;
+  border: 1px solid #c5d0fa;
+  border-radius: 10px;
+  background: var(--fb-surface);
+  box-shadow: 0 6px 24px rgba(16, 24, 40, 0.16);
+}
+
+.selectionText {
+  color: var(--fb-text);
+  font-size: 12px;
+  font-weight: 500;
+}

@@ -1,3 +1,4 @@
+import { Loader } from '@mantine/core';
 import { IconClock, IconFileText } from '@tabler/icons-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router';
@@ -137,13 +138,21 @@ interface NoteBoxProps {
   icon?: ReactNode;
   /** Linhas antes de truncar (padrão 2). O texto completo fica no `title` quando é string. */
   lines?: number;
+  /** `md` (13 px) para destaques fora dos cards, como os próximos passos da viagem. */
+  size?: 'sm' | 'md';
 }
 
 /** Caixa de nota: ícone de documento + texto de 11 px, truncado. */
-export function NoteBox({ children, variant = 'info', icon, lines = 2 }: NoteBoxProps) {
+export function NoteBox({
+  children,
+  variant = 'info',
+  icon,
+  lines = 2,
+  size = 'sm',
+}: NoteBoxProps) {
   return (
     <div
-      className={`${classes.note} ${NOTE_CLASS[variant]}`}
+      className={`${classes.note} ${NOTE_CLASS[variant]} ${size === 'md' ? classes.noteLarge : ''}`}
       style={{ '--note-lines': lines } as CSSProperties}
       title={typeof children === 'string' ? children : undefined}
     >
@@ -166,6 +175,11 @@ interface CardActionProps {
   onClick?: () => void;
   disabled?: boolean;
   title?: string;
+  /** `submit` envia o formulário indicado em `form` (o botão pode ficar fora dele, no rodapé do card). */
+  type?: 'button' | 'submit';
+  form?: string;
+  /** Mostra um indicador de progresso no lugar do ícone e desabilita o botão. */
+  loading?: boolean;
 }
 
 function joinClasses(...names: (string | false | undefined)[]): string {
@@ -180,10 +194,13 @@ function CardActionElement({
   onClick,
   disabled,
   title,
+  type = 'button',
+  form,
+  loading,
 }: CardActionProps & { className: string }) {
   const content = (
     <>
-      {icon}
+      {loading ? <Loader size={12} color="currentColor" /> : icon}
       <span>{children}</span>
     </>
   );
@@ -195,7 +212,15 @@ function CardActionElement({
     );
   }
   return (
-    <button type="button" className={className} onClick={onClick} disabled={disabled} title={title}>
+    <button
+      type={type}
+      form={form}
+      className={className}
+      onClick={onClick}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      title={title}
+    >
       {content}
     </button>
   );

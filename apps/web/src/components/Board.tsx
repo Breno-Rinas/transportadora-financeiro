@@ -20,6 +20,10 @@ export function Board({ children, label }: BoardProps) {
 export type BoardColumnTone = 'default' | 'indigo' | 'red';
 
 interface BoardColumnProps {
+  /** Âncora da coluna (ex.: para rolar até ela). */
+  id?: string;
+  /** Contorno indigo: a coluna que a navegação (querystring) quer mostrar. */
+  focused?: boolean;
   label: string;
   count: number;
   /**
@@ -62,6 +66,8 @@ const COUNT_TONE_CLASS: Record<BoardColumnTone, string> = {
 
 /** Coluna do quadro: cabeçalho com rótulo e contagem, cards em rolagem vertical e estado vazio. */
 export function BoardColumn({
+  id,
+  focused,
   label,
   count,
   tone = 'default',
@@ -75,7 +81,8 @@ export function BoardColumn({
 
   return (
     <section
-      className={`${classes.column} ${COLUMN_TONE_CLASS[tone]}`}
+      id={id}
+      className={`${classes.column} ${COLUMN_TONE_CLASS[tone]} ${focused ? classes.columnFocused : ''}`}
       style={style}
       aria-label={`${label}: ${count}`}
     >

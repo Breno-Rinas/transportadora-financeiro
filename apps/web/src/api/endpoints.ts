@@ -1,5 +1,6 @@
-import { api } from './client';
+import { api, buildUrl } from './client';
 import type {
+  CancelTripInput,
   Client,
   CreateClientInput,
   CreateDriverInput,
@@ -11,6 +12,7 @@ import type {
   RegisterProofsInput,
   RegisterUnloadingInput,
   ScheduleResult,
+  ScheduleTitleInput,
   ScheduleTitlesInput,
   SettleTitleInput,
   TitleFilters,
@@ -59,12 +61,23 @@ export const registerUnloading = (tripId: string, input: RegisterUnloadingInput)
 export const registerProofs = (tripId: string, input: RegisterProofsInput) =>
   api.post<TripDetail>(`/trips/${tripId}/proofs`, input);
 
+export const cancelTrip = (tripId: string, input: CancelTripInput) =>
+  api.post<TripDetail>(`/trips/${tripId}/cancel`, input);
+
 // Títulos
 export const listTitles = (filters: TitleFilters, signal?: AbortSignal) =>
   api.get<TitleListItem[]>('/titles', { ...filters }, signal);
 
+/** Link de download do CSV da agenda (mesmos filtros de `GET /titles`); o navegador faz o GET. */
+export const titlesCsvUrl = (filters: TitleFilters) =>
+  buildUrl('/titles/export.csv', { ...filters });
+
 export const scheduleTitles = (input: ScheduleTitlesInput) =>
   api.post<ScheduleResult>('/titles/schedule', input);
+
+/** Programa um título só; a recusa volta como erro 422 com o motivo em `message`. */
+export const scheduleTitle = (titleId: string, input: ScheduleTitleInput) =>
+  api.post<TitleWithLocks>(`/titles/${titleId}/schedule`, input);
 
 export const settleTitle = (titleId: string, input: SettleTitleInput) =>
   api.post<TitleWithLocks>(`/titles/${titleId}/settle`, input);

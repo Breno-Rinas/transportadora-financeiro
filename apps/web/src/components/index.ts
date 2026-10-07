@@ -14,12 +14,15 @@ export {
   type NoteVariant,
 } from './EntityCard';
 export { DataTable } from './DataTable';
+export { DateField, DateTimeField } from './DateFields';
 export { FilterSelect, SearchInput } from './FilterControls';
+export { KpiCard, type KpiAccent, type KpiTone } from './KpiCard';
 export { MarginBadge } from './MarginBadge';
 export { CnpjInput, CpfCnpjInput, PlateInput } from './MaskedInputs';
 export { Money } from './Money';
 export { MoneyInput } from './MoneyInput';
 export { PageHeader } from './PageHeader';
+export { PhotoPreview } from './PhotoPreview';
 export { BoardSkeleton, EmptyState, ErrorState, TableSkeleton } from './States';
 export {
   BucketBadge,

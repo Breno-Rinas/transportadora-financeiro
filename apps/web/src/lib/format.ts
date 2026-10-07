@@ -111,6 +111,76 @@ export function formatInstantDate(iso: string | null | undefined): string {
 }
 
 // ---------------------------------------------------------------------------
+// Data e hora de negócio nos formulários: o "agora" e o "hoje" do usuário são sempre os do fuso
+// de negócio (o mesmo do backend), e o texto digitado volta como instante ISO para a API.
+// ---------------------------------------------------------------------------
+
+const wallClockFormatter = new Intl.DateTimeFormat('pt-BR', {
+  timeZone: BUSINESS_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+const WALL_CLOCK_PATTERN = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/;
+
+function wallClockUtcMs(instant: Date): number {
+  const parts: Record<string, string> = {};
+  for (const { type, value } of wallClockFormatter.formatToParts(instant)) parts[type] = value;
+  return Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second),
+  );
+}
+
+/** Agora no fuso de negócio, como `YYYY-MM-DD HH:mm:ss` (formato dos seletores de data e hora). */
+export function nowDateTime(now: Date = new Date()): string {
+  const wall = new Date(wallClockUtcMs(now)).toISOString();
+  return `${wall.slice(0, 10)} ${wall.slice(11, 19)}`;
+}
+
+/** Hoje no fuso de negócio, como `YYYY-MM-DD`. */
+export function todayLocalDate(now: Date = new Date()): string {
+  return nowDateTime(now).slice(0, 10);
+}
+
+/** Instante ISO do agora, para os campos de data e hora deixados em branco ("padrão agora"). */
+export function nowIso(now: Date = new Date()): string {
+  return now.toISOString();
+}
+
+/**
+ * `"2026-10-06 14:30:00"` (hora de parede no fuso de negócio) -> `"2026-10-06T17:30:00.000Z"`.
+ * Aceita `T` no lugar do espaço e segundos opcionais; devolve `null` para texto fora do padrão.
+ */
+export function businessDateTimeToIso(value: string): string | null {
+  const match = WALL_CLOCK_PATTERN.exec(value);
+  if (!match) return null;
+
+  const [, year, month, day, hour, minute, second = '0'] = match;
+  const wallMs = Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+  );
+  // O deslocamento do fuso depende do instante: aproxima e corrige uma vez (vale em horário de verão).
+  let instant = new Date(wallMs - (wallClockUtcMs(new Date(wallMs)) - wallMs));
+  instant = new Date(wallMs - (wallClockUtcMs(instant) - instant.getTime()));
+  return Number.isNaN(instant.getTime()) ? null : instant.toISOString();
+}
+
+// ---------------------------------------------------------------------------
 // Documentos e placa: salvos sem máscara; a máscara é só de exibição.
 // As máscaras funcionam com entrada parcial, então servem para campos de digitação.
 // ---------------------------------------------------------------------------

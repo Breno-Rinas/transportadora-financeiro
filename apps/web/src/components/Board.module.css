@@ -26,6 +26,11 @@
   background: var(--fb-red-soft);
 }
 
+.columnFocused {
+  outline: 2px solid var(--fb-indigo);
+  outline-offset: 1px;
+}
+
 .header {
   display: flex;
   align-items: center;

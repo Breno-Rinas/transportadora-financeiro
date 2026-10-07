@@ -28,7 +28,8 @@ interface RequestOptions {
 
 const API_PREFIX = '/api';
 
-function buildUrl(path: string, query?: QueryParams): string {
+/** URL completa da API (`/api/...?query`), também usada em links de download. */
+export function buildUrl(path: string, query?: QueryParams): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query ?? {})) {
     if (value !== undefined && value !== null && value !== '') params.set(key, String(value));

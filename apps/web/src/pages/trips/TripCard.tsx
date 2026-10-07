@@ -22,7 +22,7 @@ export function TripCard({ trip }: { trip: TripListItem }) {
 
   return (
     <EntityCard
-      accent={negativeMargin ? 'red' : 'indigo'}
+      accent={negativeMargin ? 'red' : trip.status === 'CANCELLED' ? 'gray' : 'indigo'}
       title={trip.client.legalName}
       badge={<TripStatusBadge status={trip.status} />}
       code={formatTripCode(trip.code)}

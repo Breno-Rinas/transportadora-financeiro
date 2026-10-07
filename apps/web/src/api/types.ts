@@ -27,8 +27,11 @@
  * | POST /trips/:id/loading-photo     | multipart `file`,`occurredAt?` | `TripDetail` (201 novo, 200 reenvio) |
  * | POST /trips/:id/unloading         | `RegisterUnloadingInput`    | `TripDetail` (201 novo, 200 reenvio)  |
  * | POST /trips/:id/proofs            | `RegisterProofsInput`       | `TripDetail` (201 novo, 200 reenvio)  |
+ * | POST /trips/:id/cancel            | `CancelTripInput`           | `TripDetail` (201 novo, 200 reenvio)  |
  * | GET  /titles                      | `TitleFilters`              | `TitleListItem[]`                     |
+ * | GET  /titles/export.csv           | `TitleFilters`              | arquivo CSV (download)                |
  * | POST /titles/schedule             | `ScheduleTitlesInput`       | `ScheduleResult` (200)                |
+ * | POST /titles/:id/schedule         | `ScheduleTitleInput`        | `TitleWithLocks` (200) ou 422 com motivo |
  * | POST /titles/:id/settle           | `SettleTitleInput`          | `TitleWithLocks` (200)                |
  * | GET  /dashboard                   | `DashboardQuery`            | `Dashboard`                           |
  */
@@ -50,18 +53,22 @@ export type TripStatus =
   | 'UNLOADED'
   | 'PROOFS_RECEIVED'
   | 'BALANCE_PAID'
-  /** Reservado: nenhuma regra leva a este estado ainda. */
+  /** Terminal e fora da sequência: a viagem foi cancelada (R13). */
   | 'CANCELLED';
 
 export type TripEventType =
-  'CTE_ISSUED' | 'LOADING_PHOTO_ATTACHED' | 'UNLOADED' | 'PROOFS_RECEIVED';
+  'CTE_ISSUED' | 'LOADING_PHOTO_ATTACHED' | 'UNLOADED' | 'PROOFS_RECEIVED' | 'TRIP_CANCELLED';
 
 export type AttachmentKind = 'LOADING_PHOTO' | 'DELIVERY_RECEIPT';
 
 export type TitleNature = 'PAYABLE' | 'RECEIVABLE';
 
-/** `ADVANCE` e `BALANCE` são pagos ao motorista; `CLIENT_FREIGHT` é recebido do cliente. */
-export type TitleKind = 'ADVANCE' | 'BALANCE' | 'CLIENT_FREIGHT';
+/**
+ * `ADVANCE` e `BALANCE` são pagos ao motorista; `CLIENT_FREIGHT` é recebido do cliente;
+ * `ADVANCE_RECOVERY` é o adiantamento já pago que a viagem cancelada cobra de volta do motorista
+ * (a receber, mas do motorista, R13).
+ */
+export type TitleKind = 'ADVANCE' | 'BALANCE' | 'CLIENT_FREIGHT' | 'ADVANCE_RECOVERY';
 
 /** `OPEN` e `SCHEDULED` são os títulos em aberto. */
 export type TitleStatus = 'OPEN' | 'SCHEDULED' | 'PAID' | 'CANCELLED';
@@ -81,7 +88,9 @@ export type PendingStepCode =
   | 'UNLOADING_PENDING'
   | 'PROOFS_PENDING'
   | 'BALANCE_READY_TO_SCHEDULE'
-  | 'BALANCE_PAYMENT_PENDING';
+  | 'BALANCE_PAYMENT_PENDING'
+  /** Viagem cancelada com adiantamento já pago: "Recuperar adiantamento pago ao motorista". */
+  | 'ADVANCE_RECOVERY_PENDING';
 
 /**
  * Faixa da data efetiva do título em relação a "hoje" (fuso de negócio). `TODAY` e
@@ -130,7 +139,10 @@ export interface DriverRef {
 // Blocos calculados pelo backend (o front só exibe)
 // ---------------------------------------------------------------------------
 
-/** Margem da viagem (R7). `null` quando não há títulos nem frete cotado. */
+/**
+ * Margem da viagem (R7). `null` quando não há títulos nem frete cotado. Na viagem cancelada,
+ * `amountCents` é 0 e `percent` é `null` (títulos cancelados são ignorados, R13).
+ */
 export interface Margin {
   kind: MarginKind;
   amountCents: number;
@@ -153,6 +165,8 @@ export interface LockReason {
 /**
  * Travas do título (R4). Só o saldo tem travas. `ADVANCE_NOT_PAID` bloqueia apenas a baixa:
  * a programação continua permitida. O botão da UI fica habilitado e o backend decide.
+ * Título cancelado vem com `canSchedule` e `canSettle` falsos e sem motivos: é "Cancelado", não
+ * travado.
  */
 export interface TitleLocks {
   canSchedule: boolean;
@@ -228,7 +242,7 @@ export interface Attachment {
   originalName: string;
   mimeType: string;
   sizeBytes: number;
-  /** Caminho servido pela API, ex.: `/uploads/2026/10/abc.jpg` (usar direto em `<img src>`). */
+  /** Caminho servido pela API, ex.: `/uploads/<uuid>.jpg` (usar direto em `<img src>`). */
   url: string;
   createdAt: IsoDateTime;
 }
@@ -254,7 +268,11 @@ export interface TimelineStatusChangeEntry {
   at: IsoDateTime;
   fromStatus: TripStatus | null;
   toStatus: TripStatus;
-  /** Origem da transição (ex.: `CTE_ISSUED`, `ADVANCE_PAID`); texto técnico. */
+  /**
+   * Origem da transição, texto técnico: `TRIP_CREATED`, `CTE_AND_LOADING_PHOTO_REGISTERED`,
+   * `ADVANCE_SETTLED`, `UNLOADING_REGISTERED`, `PROOFS_REGISTERED`, `BALANCE_SETTLED` ou
+   * `TRIP_CANCELLED`.
+   */
   trigger: string;
 }
 
@@ -480,6 +498,20 @@ export interface ScheduleTitlesInput {
   date: LocalDate;
 }
 
+/** Programação de um título só (`POST /titles/:id/schedule`); a recusa vem como erro 422. */
+export interface ScheduleTitleInput {
+  /** Data da programação; precisa ser ≥ hoje (R10). */
+  date: LocalDate;
+}
+
+/** Cancelamento da viagem (R13). */
+export interface CancelTripInput {
+  /** Motivo obrigatório. */
+  reason: string;
+  /** Quando o cancelamento aconteceu; sem ele, vale o instante do registro. */
+  occurredAt?: IsoDateTime;
+}
+
 export interface SettleTitleInput {
   paidOn: LocalDate;
   /** Precisa ser igual ao valor do título (baixa integral, R10). */
@@ -500,7 +532,8 @@ export interface ValidationErrorDetail {
 /**
  * Formato único de erro da API. Códigos: 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`;
  * 409 `EVENT_ALREADY_REGISTERED`, `TRIP_NOT_LOADED`, `UNLOADING_NOT_REGISTERED`,
- * `TITLE_ALREADY_PAID`, `DOCUMENT_ALREADY_EXISTS`, `CTE_NUMBER_IN_USE`; 422 `BALANCE_LOCKED`,
+ * `TITLE_ALREADY_PAID`, `DOCUMENT_ALREADY_EXISTS`, `CTE_NUMBER_IN_USE`, `TRIP_CANCELLED`,
+ * `TITLE_CANCELLED`, `TRIP_ALREADY_FINISHED`; 422 `BALANCE_LOCKED`,
  * `ADVANCE_NOT_PAID`, `PARTIAL_PAYMENT_NOT_SUPPORTED`, `INVALID_EVENT_DATE`, `INVALID_DATE`,
  * `ONLY_PAYABLE_CAN_BE_SCHEDULED`, `INVALID_DOCUMENT`; 500 `INTERNAL_ERROR`.
  */

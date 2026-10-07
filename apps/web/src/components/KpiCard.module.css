@@ -21,7 +21,7 @@
     transform 120ms ease;
 }
 
-.kpi:hover {
+.interactive:hover {
   box-shadow: 0 3px 10px rgba(16, 24, 40, 0.09);
   transform: translateY(-1px);
 }

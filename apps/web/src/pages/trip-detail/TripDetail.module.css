@@ -1,0 +1,354 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  color: var(--fb-muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.back:hover {
+  color: var(--fb-indigo);
+  text-decoration: underline;
+}
+
+/* Cabeçalho da viagem ------------------------------------------------------------------ */
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--fb-border);
+  border-left: 3px solid var(--fb-indigo-accent);
+  border-radius: 8px;
+  background: var(--fb-surface);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.headerCancelled {
+  border-left-color: #ced4da;
+}
+
+.headerTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.headerTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  min-width: 0;
+}
+
+.heading {
+  margin: 0;
+  color: var(--fb-text);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.headingCode {
+  color: var(--fb-muted);
+  font-weight: 600;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px 24px;
+  padding-top: 12px;
+  border-top: 1px solid var(--fb-border-soft);
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.factLabel {
+  color: var(--fb-label);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.factStrong {
+  color: var(--fb-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.factMuted {
+  color: var(--fb-muted);
+  font-size: 11px;
+}
+
+/* Próximos passos ---------------------------------------------------------------------- */
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stepsTitle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.stepsList {
+  margin: 0;
+  padding-left: 16px;
+}
+
+/* Valores ------------------------------------------------------------------------------ */
+
+.values {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.valueRows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 2px;
+}
+
+.valueRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.valueRowLabel {
+  color: var(--fb-muted);
+}
+
+.valueRowAmount {
+  color: var(--fb-text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* Corpo: eventos à esquerda, títulos e linha do tempo à direita ------------------------- */
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--fb-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sectionCount {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #e1e4ea;
+  color: #5b6372;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.titles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.lockBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Formulários e fatos nos cards de evento ----------------------------------------------- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.formRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.fieldHint {
+  margin: 0;
+  color: var(--fb-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.eventFact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.eventFactStrong {
+  color: var(--fb-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.eventFactMuted {
+  color: var(--fb-muted);
+  font-size: 11px;
+}
+
+.previewHint {
+  margin: 0;
+  color: var(--fb-muted);
+  font-size: 11px;
+}
+
+/* Linha do tempo ------------------------------------------------------------------------ */
+
+.timeline {
+  margin: 0;
+  padding: 14px 16px;
+  list-style: none;
+  border: 1px solid var(--fb-border);
+  border-radius: 8px;
+  background: var(--fb-surface);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.entry {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  padding-bottom: 14px;
+}
+
+.entry:last-child {
+  padding-bottom: 0;
+}
+
+.entry:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 26px;
+  bottom: 0;
+  left: 12px;
+  width: 1px;
+  background: var(--fb-border);
+}
+
+.entryIcon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  background: var(--entry-bg, #edf2ff);
+  color: var(--entry-color, #3b5bdb);
+}
+
+.entryEvent {
+  --entry-bg: #edf2ff;
+  --entry-color: #3b5bdb;
+}
+
+.entryStatus {
+  --entry-bg: #f1f2f5;
+  --entry-color: #5b6372;
+}
+
+.entryPayment {
+  --entry-bg: #ebfbee;
+  --entry-color: #2b8a3e;
+}
+
+.entryCancel {
+  --entry-bg: #ffe3e3;
+  --entry-color: #c92a2a;
+}
+
+.entryBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-top: 3px;
+  font-size: 12px;
+}
+
+.entryTitle {
+  color: var(--fb-text);
+  font-weight: 500;
+}
+
+.entryMeta {
+  color: var(--fb-muted);
+  font-size: 11px;
+}
+
+.entryPhoto {
+  width: 150px;
+  margin-top: 4px;
+}
+
+@media (max-width: 1100px) {
+  .columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .values {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
