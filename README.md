@@ -40,47 +40,6 @@ O E2E da API (`apps/api/test/acceptance.test.ts`) usa o banco `transportadora_te
 
 **Recomeçar do zero:** `npm run db:reset` (recria o banco, aplica migrations e roda o seed). Sem Node na máquina: `docker compose down -v && docker compose up --build`.
 
-### Seed: 13 viagens em estados diferentes
-
-O seed sobe automaticamente quando o banco está vazio, passando pelos mesmos casos de uso da API (não insere direto no banco), com 4 clientes e 6 motoristas de documentos válidos. As datas são relativas ao dia em que o seed rodou; se subir em outro dia, use `db:reset` para reancorar. Num banco novo os códigos vão de VG-0001 a VG-0013, na ordem abaixo.
-
-| Viagem | Caso de borda |
-|---|---|
-| VG-0001 | Criada, sem eventos |
-| VG-0002 | Só CT-e, sem foto: nenhum título gerado |
-| VG-0003 | Só foto, sem CT-e (ordem invertida): nenhum título gerado |
-| VG-0004 | Carregada, adiantamento vencendo hoje |
-| VG-0005 | Carregada, adiantamento vencido |
-| VG-0006 | Adiantamento pago, aguardando descarga |
-| VG-0007 | Descarregada sem comprovante: saldo travado por falta do canhoto |
-| VG-0008 | Descarga e comprovantes registrados antes do adiantamento pago: fica em `LOADED`, saldo programável mas não pagável |
-| VG-0009 | Comprovantes recebidos, saldo liberado e ainda não programado |
-| VG-0010 | Saldo programado para hoje |
-| VG-0011 | Finalizada, com o a receber do cliente ainda em aberto |
-| VG-0012 | Margem negativa (frete do motorista maior que o do cliente) |
-| VG-0013 | Cancelada com adiantamento já pago: recuperação a receber do motorista |
-
-## Roteiro sugerido para avaliar
-
-O mesmo roteiro roda automatizado no E2E. Na interface:
-
-1. **Criar a viagem.** Em `/viagens`, "Nova viagem": cliente Agro Cerrado (prazo de 30 dias), frete cotado R$ 5.000,00, frete do motorista R$ 3.333,33, adiantamento 70%. A viagem nasce "Criada" com margem projetada de R$ 1.666,67 (cotado menos frete do motorista).
-2. **CT-e sem foto não gera títulos.** No detalhe, registre o CT-e (o frete cotado vem pré-preenchido). Nenhum título nasce; o próximo passo mostra "Aguardando foto do carregamento".
-3. **A foto gera os 3 títulos.** Anexe a foto do carregamento (JPEG, PNG ou WEBP, até 10 MB): nascem o adiantamento de R$ 2.333,33, o saldo de R$ 1.000,00 (a pagar, sem vencimento) e o frete do cliente de R$ 5.000,00 (a receber). A viagem vira "Carregada".
-4. **O a receber segue o prazo do cliente.** Vencimento = data de emissão do CT-e + 30 dias.
-5. **Saldo travado.** Tente programar o saldo: a recusa mostra os motivos vindos da API. Em `/financeiro`, selecione adiantamento e saldo e use "Programar selecionados": o adiantamento é programado e o saldo aparece como recusado, com o motivo.
-6. **Descarga sem comprovante mantém a trava.** Registre a descarga: o saldo continua travado ("Aguardando chegada do canhoto original do CT-e").
-7. **O comprovante libera o saldo.** Registre os comprovantes: o saldo ganha vencimento (a data do comprovante) e pode ser programado. A viagem continua "Carregada" porque o adiantamento ainda não foi pago (ver decisão R8 abaixo), e a pendência mostra isso.
-8. **Ordem de pagamento.** Tente dar baixa no saldo antes do adiantamento: recusado (`ADVANCE_NOT_PAID`).
-9. **Baixas.** Dê baixa no adiantamento: a viagem avança em sequência (três transições gravadas na linha do tempo, até "Comprovantes recebidos"). Dê baixa no saldo: "Finalizada". O a receber continua em aberto.
-10. **Idempotência.** Reenvie o mesmo CT-e (mesmos número, série, data de emissão e valor): 200, sem títulos duplicados. Com qualquer dado diferente: 409 `EVENT_ALREADY_REGISTERED`. Pela API (o `<id>` vem da URL do detalhe; os valores de `cte` vêm de `GET /api/trips/<id>`):
-    ```bash
-    curl -i -X POST http://localhost:3333/api/trips/<id>/cte -H 'Content-Type: application/json' \
-      -d '{"number":<cte.number>,"series":<cte.series>,"issuedAt":"<cte.issuedAt>","clientFreightCents":<cte.clientFreightCents>}'
-    ```
-11. **Margem negativa.** Abra VG-0012: margem em vermelho com ícone na lista e badge "Margem negativa" no quadro de viagens.
-12. **Bônus.** VG-0013 mostra o cancelamento com recuperação. Para cancelar na interface, use o cancelamento no detalhe de uma viagem aberta e informe o motivo. A exportação CSV da agenda está em `GET /api/titles/export.csv` (aceita os filtros de `/titles`).
-
 ## Arquitetura
 
 Monorepo com npm workspaces (`apps/api`, `apps/web`), TypeScript `strict` nos dois. API: Fastify 5, Prisma 7, PostgreSQL 16, Zod 4, Vitest. Web: Vite 8, React 19, React Router 8, TanStack Query, Mantine 9.
@@ -146,38 +105,6 @@ docker/postgres/     cria o banco de testes
 - **`FreightAgreement` separado da `Trip`.** O acordo com o motorista (valor e percentual) fica em tabela própria para permitir renegociação e histórico depois, sem mexer na viagem. Custo atual: um join a mais.
 - **Frete cotado versus valor do CT-e.** `Trip.quotedClientFreightCents` serve só para projeção de margem e para pré-preencher o CT-e. O valor do CT-e (`Cte.clientFreightCents`) é o que gera o a receber e pode diferir do cotado. Sem títulos, a margem é projetada (cotado menos motorista); com títulos, realizada.
 - **CNPJ alfanumérico.** Aceito conforme a IN RFB 2.229/2024, além do só numérico, com validação pelos dígitos verificadores. CPF, CNPJ e placa são salvos só com dígitos/letras maiúsculas; a máscara é aplicada na exibição, e o `maskCnpj` do front aceita letras.
-
-## Premissas assumidas
-
-Perguntas que eu faria ao negócio e a resposta que assumi.
-
-**Centrais:**
-
-| Pergunta | Resposta assumida |
-|---|---|
-| A descarga e os comprovantes podem ser registrados antes de o adiantamento ser pago? | Sim. O fato é aceito quando acontece e o estado avança só pela sequência (R8). O saldo pode ser programado, mas não pago antes do adiantamento. |
-| Quando vence o saldo do motorista? | Na data de chegada dos comprovantes. Antes disso não tem vencimento (`dueDate` nulo). |
-| Pode haver baixa parcial? | Não. A baixa é sempre integral. |
-| O filtro de período da lista de viagens olha qual data? | A data de criação da viagem. |
-
-**Outras decisões que tomei sem poder confirmar:**
-
-| Pergunta | Resposta assumida |
-|---|---|
-| Quando vence o adiantamento? | No dia do carregamento: o mais tarde entre os `occurredAt` do CT-e e da foto. |
-| Quando vence o a receber? | Data de negócio da emissão do CT-e + prazo do cliente. |
-| Quais percentuais de adiantamento existem? | Só 50% ou 70%. |
-| Como arredondar o adiantamento? | Half-up em centavos; o saldo absorve a diferença. |
-| Dá para programar um título a receber? | Não, só a pagar (422 `ONLY_PAYABLE_CAN_BE_SCHEDULED`). Programação com data >= hoje; baixa com data <= hoje. |
-| Os eventos podem ter data no futuro ou fora de ordem? | Não: `occurredAt` futuro, ou anterior ao fato que o precede, dá 422 `INVALID_EVENT_DATE`. |
-| O que conta como "vencendo na semana"? | De hoje até hoje + 6 dias, pela data efetiva (`scheduledFor` ou, se vazio, `dueDate`). |
-| Qual período e qual margem o painel usa? | Mês corrente por padrão; soma as margens realizadas das viagens com CT-e emitido no período. Percentual ponderado (margem total / frete total). |
-| Qual a margem de uma viagem sem títulos? | Projetada, se houver frete cotado; senão `null`. |
-| Quando dá para cancelar a viagem? | Em qualquer status, menos finalizada ou já cancelada. Títulos em aberto ou programados são cancelados; os pagos ficam como histórico. |
-| E se o adiantamento já foi pago ao cancelar? | Nasce um título a receber do motorista (`ADVANCE_RECOVERY`) com o mesmo valor, vencendo na data do cancelamento. A margem da viagem cancelada é sempre realizada (zero quando o adiantamento é recuperado). |
-| E se o cliente já pagou ao cancelar? | O estorno ao cliente está fora do escopo; o valor recebido continua contando na margem. |
-| O que vale como foto do carregamento? | JPEG, PNG ou WEBP de até 10 MB; o tipo é detectado pela assinatura do arquivo, não pelo mimetype declarado. |
-| Qual o fuso? | `America/Sao_Paulo`, configurável por `BUSINESS_TZ`. |
 
 ## API
 
